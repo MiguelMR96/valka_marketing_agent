@@ -1,7 +1,7 @@
 [project]
 name = "valka-agent"
 version = "0.1.0"
-description = "Valka Agent v1 demo (feeding-transition assistant for BJ's Raw Pet Food)"
+description = "Valka Agent v1 demo (feeding-transition assistant for Valka)"
 requires-python = ">=3.11"
 dependencies = [
     "langgraph>=0.2.60",

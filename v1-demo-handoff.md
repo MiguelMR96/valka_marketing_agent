@@ -13,7 +13,7 @@ This addendum overrides two sections of the original spec, for this pass only: "
 If any of these are still `<<FILL: ...>>`, stop and ask.
 
 1. Path to dad-agent-build-spec.md (above)
-2. Path to the scraped BJ's Raw Pet Food content: `<<FILL: path to scrape>>`
+2. Path to the scraped Valka content: `<<FILL: path to scrape>>`
 3. Working directory for the fresh WSL build: `<<FILL: e.g. ~/projects/valka-agent>>`
 
 ## What's different for this pass
@@ -72,7 +72,7 @@ If you run out of time, cut from the bottom. Do not skip ahead.
 
 ## Knowledge base — hard stop
 
-Format the KB from the real scraped BJ's Raw Pet Food content at the path given above.
+Format the KB from the real scraped Valka content at the path given above.
 
 If that path is missing or empty, stop and tell Miguel. Do not generate a placeholder catalogue. The audience tomorrow is a boss at the pet food company who knows these products. Invented product facts are worse than a narrower demo.
 
@@ -120,7 +120,7 @@ These three conversations must run cleanly. Encode them in scripts/smoke.py and 
 
 ### 1. Product question
 
-`<<FILL: a real question about a real BJ's product, e.g. "What's in the beef and tripe blend?">>`
+`<<FILL: a real question about a real Valka product, e.g. "What's in the beef and tripe blend?">>`
 
 Must route to product_question, cite from the KB, populate kb_citations, and not invent product facts. If the KB doesn't cover it, it must say so rather than guess.
 

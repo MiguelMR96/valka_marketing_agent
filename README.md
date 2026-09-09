@@ -7,8 +7,8 @@
 
 ## ⚠️ Placeholder knowledge base
 
-`data/kb/*.md` are **invented placeholder products**, not real BJ's Raw Pet
-Food content — the real scrape wasn't available at build time. See
+`data/kb/*.md` are **invented placeholder products**, not real Valka
+content — the real scrape wasn't available at build time. See
 `data/kb/README_PLACEHOLDER.md`. **Swap these before showing anyone who
 knows the real product line.**
 

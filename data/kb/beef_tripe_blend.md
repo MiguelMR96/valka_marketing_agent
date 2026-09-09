@@ -1,4 +1,4 @@
-<!-- PLACEHOLDER PRODUCT — invented content, not real BJ's Raw Pet Food data. See README_PLACEHOLDER.md -->
+<!-- PLACEHOLDER PRODUCT — invented content, not real Valka data. See README_PLACEHOLDER.md -->
 
 # Beef & Tripe Blend (PLACEHOLDER)
 
