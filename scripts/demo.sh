@@ -13,5 +13,5 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 uv sync --extra dev
-uv run pytest tests/ -v
+uv run python -m pytest tests/ -v
 uv run python scripts/smoke.py

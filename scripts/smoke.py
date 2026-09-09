@@ -9,7 +9,9 @@ Usage:
     MOCK_LLM=0 python scripts/smoke.py # real Groq/Gemini calls
 """
 import os
+import subprocess
 import sys
+import tempfile
 
 os.environ.setdefault("MOCK_LLM", "1")
 
@@ -17,8 +19,58 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from langchain_core.messages import HumanMessage
 
-from valka_agent.config import check_startup_config, DB_PATH
+from valka_agent.config import check_startup_config
 from valka_agent.graph import build_graph, get_sqlite_checkpointer
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Run as `python -c` in a fresh subprocess (real process boundary, not just a
+# new object in this script) to prove the escalate pause survives on disk
+# rather than in some in-memory LangGraph structure. Each snippet builds its
+# own SqliteSaver/connection against the shared db path passed via env.
+_PAUSE_SNIPPET = """
+import os, sys
+from langchain_core.messages import HumanMessage
+from valka_agent.graph import build_graph, get_sqlite_checkpointer
+
+checkpointer = get_sqlite_checkpointer(os.environ["VALKA_DB_PATH"])
+graph = build_graph(checkpointer=checkpointer)
+config = {"configurable": {"thread_id": os.environ["VALKA_THREAD_ID"]}}
+result = graph.invoke(
+    {"messages": [HumanMessage(content="I want a refund, my dog had an allergic reaction")]},
+    config,
+)
+assert result.get("__interrupt__"), f"expected a pause, got {result!r}"
+assert result.get("awaiting_human") is True, f"got awaiting_human={result.get('awaiting_human')!r}"
+print("PAUSED", flush=True)
+"""
+
+_RESUME_SNIPPET = """
+import os, sys
+from langgraph.types import Command
+from valka_agent.graph import build_graph, get_sqlite_checkpointer
+
+checkpointer = get_sqlite_checkpointer(os.environ["VALKA_DB_PATH"])
+graph = build_graph(checkpointer=checkpointer)
+config = {"configurable": {"thread_id": os.environ["VALKA_THREAD_ID"]}}
+result = graph.invoke(Command(resume=os.environ["VALKA_HUMAN_REPLY"]), config)
+assert result.get("awaiting_human") is False, f"got awaiting_human={result.get('awaiting_human')!r}"
+print("RESUMED:" + result["messages"][-1].content, flush=True)
+"""
+
+
+def _run_subprocess_snippet(snippet: str, env: dict) -> str:
+    proc = subprocess.run(
+        [sys.executable, "-c", snippet],
+        cwd=REPO_ROOT,
+        env={**os.environ, **env},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if proc.returncode != 0:
+        raise AssertionError(f"subprocess failed (exit {proc.returncode}):\n{proc.stderr}")
+    return proc.stdout.strip()
 
 FAILURES = []
 
@@ -94,16 +146,67 @@ def conversation_3_order_status(graph):
           "response too long for a smalltalk/order-status turn")
 
 
+def conversation_4_escalate_interrupt_resume():
+    print("\n=== Conversation 4: escalate -> interrupt -> resume across a process restart ===")
+    print("  (each half below runs in its own `python -c` subprocess, sharing only the sqlite file)")
+
+    db_fd, db_path = tempfile.mkstemp(suffix=".sqlite", prefix="valka-escalate-smoke-")
+    os.close(db_fd)
+    os.remove(db_path)  # let sqlite create it fresh
+
+    env = {
+        "VALKA_DB_PATH": db_path,
+        "VALKA_THREAD_ID": "demo-4-escalate",
+        "VALKA_HUMAN_REPLY": "A team member will reach out within 24 hours.",
+    }
+
+    try:
+        pause_out = _run_subprocess_snippet(_PAUSE_SNIPPET, env)
+        print(f"  [process 1] > I want a refund, my dog had an allergic reaction")
+        print(f"  [process 1] < {pause_out}")
+        check("first process paused on interrupt()", pause_out == "PAUSED", pause_out)
+
+        resume_out = _run_subprocess_snippet(_RESUME_SNIPPET, env)
+        print(f"  [process 2] > (resume) {env['VALKA_HUMAN_REPLY']}")
+        print(f"  [process 2] < {resume_out}")
+        check("second (fresh) process resumed the same thread",
+              resume_out == f"RESUMED:{env['VALKA_HUMAN_REPLY']}", resume_out)
+    except AssertionError as e:
+        check("escalate interrupt/resume across restart", False, str(e))
+    finally:
+        if os.path.exists(db_path):
+            os.remove(db_path)
+
+
 def main():
     check_startup_config()
-    print(f"MOCK_LLM={os.environ.get('MOCK_LLM')}  db={DB_PATH}")
 
-    checkpointer = get_sqlite_checkpointer(DB_PATH)
-    graph = build_graph(checkpointer=checkpointer)
+    # Own throwaway db, not the real DB_PATH: thread_ids here are hardcoded,
+    # and DB_PATH is a persistent file (that's the point, for the live demo).
+    # Reusing it here would mean each smoke.py run starts from whatever state
+    # the *previous* run left those threads in instead of a clean slate --
+    # e.g. a rerun would find demo-2's transition_data already fully
+    # populated and skip straight to the schedule on turn 1, then misroute
+    # turns 2-3 as smalltalk/product_question. Bit for bit the same bug
+    # conversation_4 below tests *for* (state must survive a real restart)
+    # is exactly what breaks a hardcoded thread_id smoke test that ISN'T
+    # given a fresh db -- so give it one.
+    db_fd, db_path = tempfile.mkstemp(suffix=".sqlite", prefix="valka-smoke-")
+    os.close(db_fd)
+    os.remove(db_path)
+    print(f"MOCK_LLM={os.environ.get('MOCK_LLM')}  db={db_path} (throwaway, per-run)")
 
-    conversation_1_product_question(graph)
-    conversation_2_feeding_transition(graph)
-    conversation_3_order_status(graph)
+    try:
+        checkpointer = get_sqlite_checkpointer(db_path)
+        graph = build_graph(checkpointer=checkpointer)
+
+        conversation_1_product_question(graph)
+        conversation_2_feeding_transition(graph)
+        conversation_3_order_status(graph)
+        conversation_4_escalate_interrupt_resume()
+    finally:
+        if os.path.exists(db_path):
+            os.remove(db_path)
 
     print("\n" + "=" * 60)
     if FAILURES:

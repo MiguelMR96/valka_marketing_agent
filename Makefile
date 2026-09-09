@@ -4,7 +4,7 @@ install:
 	uv sync --extra dev
 
 test:
-	uv run pytest tests/ -v
+	uv run python -m pytest tests/ -v
 
 smoke:
 	uv run python scripts/smoke.py

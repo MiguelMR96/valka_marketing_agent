@@ -44,12 +44,15 @@ real Groq/Gemini instead.
 Missing API keys with `MOCK_LLM` unset fail immediately at startup with a
 clear error — never mid-conversation.
 
-## Status (Phase 1 of 4 complete)
+## Status (Phase 2 of 4 complete)
 
 - [x] `state.py`, `graph.py`, six nodes, feeding calculator (unit-tested),
       SQLite checkpointer, LLM wrapper (Groq → Gemini → mock),
       `scripts/smoke.py` covering the three demo conversations
-- [ ] Phase 2: `interrupt()` on the escalate path + resume across restarts
+- [x] Phase 2: `interrupt()` on the escalate path + resume across restarts —
+      `scripts/smoke.py`'s 4th conversation proves this across a real OS
+      process boundary (two separate `python -c` subprocesses sharing only
+      a sqlite file on disk), not just a fresh object in the same script
 - [ ] Phase 3: FastAPI + SSE, React/Vite frontend
 - [ ] Phase 4: voice, behind `VITE_ENABLE_VOICE` flag
 
@@ -72,6 +75,14 @@ clear error — never mid-conversation.
   templated/deterministic — kept that way on purpose to shrink the demo's
   network dependency surface. Revisit this if the real spec calls for LLM
   involvement elsewhere.
+- **`scripts/smoke.py` uses its own throwaway sqlite db**, created fresh and
+  deleted on every run — not the real `DB_PATH`. The demo conversations use
+  hardcoded `thread_id`s, and the checkpointer persists state across process
+  runs by design (that's the whole point of Phase 2); pointing the smoke
+  script at the same file the live demo/API would use meant a second run
+  picked up a previous run's finished `transition_data` and misrouted
+  turns 2-3. Conversation 4 (escalate/interrupt) gets its own separate
+  throwaway db per invocation for the same reason.
 - **Field extraction in `gather_transition_info`** is regex/keyword-based,
   not LLM-based — slot values feed real arithmetic, so predictability beat
   flexibility for tonight. It gates product/sensitivity extraction on
