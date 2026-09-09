@@ -136,6 +136,33 @@ def conversation_2_feeding_transition(graph):
     check("schedule spans 7 days", "Day 7" in reply and "Day 8" not in reply, reply)
 
 
+def conversation_5_product_recommendation(graph):
+    print("\n=== Conversation 5: product recommendation (multi-turn) ===")
+    thread_id = "demo-5-product-recommendation"
+
+    r1 = send(graph, thread_id, "What would you recommend for my dog?")
+    check("routed to product_recommendation", r1["intent"] == "product_recommendation",
+          f"got intent={r1['intent']!r}")
+    check("asks for avoid-ingredient/priority", any(
+        kw in r1["messages"][-1].content.lower() for kw in ("avoid", "protein")
+    ), r1["messages"][-1].content)
+
+    r2 = send(graph, thread_id, "No allergies, and budget matters most to me.")
+    rd = r2["recommendation_data"]
+    check("captured avoid_ingredient=none", rd.get("avoid_ingredient") == "none",
+          f"got recommendation_data={rd!r}")
+    check("captured priority=budget", rd.get("priority") == "budget",
+          f"got recommendation_data={rd!r}")
+    check("kb_citations covers the full catalog", len(r2["kb_citations"]) == 3,
+          f"got kb_citations={r2['kb_citations']!r}")
+    # Not asserting on the recommendation's actual product pick here: under
+    # MOCK_LLM that text is a blind truncated echo of the catalog (same
+    # limitation as product_question's mock, see llm.py), not real
+    # reasoning about price/fit. Verified manually against real Groq that
+    # this exact scenario (no allergies, budget priority) correctly
+    # recommends Turkey & Veggie Blend, the cheapest of the three.
+
+
 def conversation_3_order_status(graph):
     print("\n=== Conversation 3: order status ===")
     result = send(graph, "demo-3-order-status",
@@ -204,6 +231,7 @@ def main():
         conversation_2_feeding_transition(graph)
         conversation_3_order_status(graph)
         conversation_4_escalate_interrupt_resume()
+        conversation_5_product_recommendation(graph)
     finally:
         if os.path.exists(db_path):
             os.remove(db_path)

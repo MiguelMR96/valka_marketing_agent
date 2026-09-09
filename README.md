@@ -49,6 +49,11 @@ clear error — never mid-conversation.
 - [x] `state.py`, `graph.py`, six nodes, feeding calculator (unit-tested),
       SQLite checkpointer, LLM wrapper (Groq → Gemini → mock),
       `scripts/smoke.py` covering the three demo conversations
+- [x] Post-demo addition: `product_recommendation` intent + a 7th node,
+      `gather_recommendation_info`, mirroring `gather_transition_info`'s
+      loop-back shape. Added state.py fields (`recommendation_data`), which
+      the original spec marked hands-off for this pass -- flagging that
+      explicitly since it's the one file meant to stay verbatim.
 - [x] Phase 2: `interrupt()` on the escalate path + resume across restarts —
       `scripts/smoke.py`'s 4th conversation proves this across a real OS
       process boundary (two separate `python -c` subprocesses sharing only
@@ -76,11 +81,13 @@ free tier (confirmed against the live API on 2026-09-08) — this now uses
 
 ## Design notes for the rebuild pass
 
-- **Six nodes** = one per intent (`product_question`, `gather_transition_info`,
-  `order_status`, `escalate`, `smalltalk`) + `classify_intent`. This mapping
-  was inferred from the addendum's demo script and `state.py`'s intent enum,
-  since the original build spec's node table wasn't available at build time
-  — verify against the real spec before treating this as gospel.
+- **Seven nodes** (six original + `gather_recommendation_info`) = one per
+  intent (`product_question`, `gather_transition_info`,
+  `gather_recommendation_info`, `order_status`, `escalate`, `smalltalk`) +
+  `classify_intent`. The original six were inferred from the addendum's
+  demo script and `state.py`'s intent enum, since the original build spec's
+  node table wasn't available at build time — verify against the real spec
+  before treating this as gospel.
 - **The gather_transition_info "loop-back"** is realized at the graph's
   *entry point*, not as a same-turn self-edge: `_route_from_entry` in
   `graph.py` checks whether the previous turn's `intent` was

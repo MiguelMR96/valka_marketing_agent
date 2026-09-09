@@ -32,3 +32,10 @@ REQUIRED_TRANSITION_FIELDS = ("weight_lbs", "current_food", "target_product", "s
 
 def missing_transition_fields(transition_data: dict) -> list[str]:
     return [f for f in REQUIRED_TRANSITION_FIELDS if f not in transition_data or transition_data[f] is None]
+
+
+REQUIRED_RECOMMENDATION_FIELDS = ("avoid_ingredient", "priority")
+
+
+def missing_recommendation_fields(recommendation_data: dict) -> list[str]:
+    return [f for f in REQUIRED_RECOMMENDATION_FIELDS if f not in recommendation_data or recommendation_data[f] is None]

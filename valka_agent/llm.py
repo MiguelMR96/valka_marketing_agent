@@ -29,13 +29,15 @@ import re
 from valka_agent.config import MOCK_LLM, GROQ_API_KEY, GEMINI_API_KEY
 
 VALID_INTENTS = {
-    "product_question", "feeding_transition", "order_status", "escalate", "smalltalk",
+    "product_question", "feeding_transition", "product_recommendation",
+    "order_status", "escalate", "smalltalk",
 }
 
 _INTENT_SYSTEM_PROMPT = """You are an intent classifier for a pet food company's chat agent.
 Classify the user's latest message into exactly one of these categories:
-- product_question: asking about ingredients, nutrition, a specific product
+- product_question: asking about ingredients, nutrition, a specific named product
 - feeding_transition: wants to switch/transition their dog to a new food or raw diet
+- product_recommendation: wants a suggestion for which product to buy/pick ("what do you recommend", "which one is best for my dog"), not asking about a specific named product
 - order_status: asking about an existing order, shipping, delivery
 - escalate: complaint, refund request, a sick/injured pet, wants a human, anything urgent
 - smalltalk: greetings, thanks, chit-chat not covered above
@@ -53,6 +55,14 @@ Answer the user's question using ONLY the product context provided below.
 If the context does not answer the question, say plainly that you don't have
 that information rather than guessing. Keep the answer to 2-4 sentences."""
 
+_RECOMMEND_SYSTEM_PROMPT = """You are a helpful assistant for a raw pet food company.
+Recommend exactly ONE product from the catalog below that best fits the
+customer's stated constraints. Use ONLY facts present in the catalog --
+if nothing in it satisfies an avoid-ingredient constraint, say so plainly
+rather than recommending something unsafe. Briefly explain why in 2-4
+sentences, referencing the relevant fact (price, sensitivity guidance,
+ingredients) from the catalog."""
+
 
 def _mock_classify(text: str) -> str:
     t = text.lower()
@@ -62,6 +72,8 @@ def _mock_classify(text: str) -> str:
         return "order_status"
     if any(k in t for k in ("switch", "transition", "change her food", "change his food", "move to raw", "to raw")):
         return "feeding_transition"
+    if any(k in t for k in ("recommend", "suggest", "which one", "what should i", "best for my dog", "what would you")):
+        return "product_recommendation"
     if any(k in t for k in ("ingredient", "contains", "made of", "protein", "blend", "what's in", "whats in", "nutrition")):
         return "product_question"
     if any(k in t for k in ("hi", "hello", "hey", "thanks", "thank you", "how are you", "good morning", "good afternoon")):
@@ -106,6 +118,22 @@ def answer_with_context(query: str, context_chunks: list[str]) -> str:
     result = _chat(_PRODUCT_SYSTEM_PROMPT, prompt)
     if result is None:
         return ("Based on our product info:\n\n" + context_block[:600]).strip()
+    return result.strip()
+
+
+def recommend_product(criteria: dict, catalog_chunks: list[str]) -> str:
+    catalog_block = "\n\n---\n\n".join(catalog_chunks)
+    criteria_lines = "\n".join(f"- {k}: {v}" for k, v in criteria.items())
+
+    if MOCK_LLM:
+        return (
+            f"Based on:\n{criteria_lines}\n\nCatalog:\n\n" + catalog_block[:600]
+        ).strip()
+
+    prompt = f"Catalog:\n{catalog_block}\n\nCustomer constraints:\n{criteria_lines}"
+    result = _chat(_RECOMMEND_SYSTEM_PROMPT, prompt)
+    if result is None:
+        return (f"Based on:\n{criteria_lines}\n\nCatalog:\n\n" + catalog_block[:600]).strip()
     return result.strip()
 
 

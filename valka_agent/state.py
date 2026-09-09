@@ -17,13 +17,19 @@ class TransitionData(TypedDict, total=False):
     sensitivity: Literal["low", "normal", "high"]
 
 
+class RecommendationData(TypedDict, total=False):
+    avoid_ingredient: str
+    priority: Literal["budget", "sensitive_stomach", "no_preference"]
+
+
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     intent: Optional[Literal[
-        "product_question", "feeding_transition",
+        "product_question", "feeding_transition", "product_recommendation",
         "order_status", "escalate", "smalltalk"
     ]]
     transition_data: Annotated[TransitionData, merge_dict]
+    recommendation_data: Annotated[RecommendationData, merge_dict]
     kb_citations: list[str]
     escalation_reason: Optional[str]
     awaiting_human: bool
