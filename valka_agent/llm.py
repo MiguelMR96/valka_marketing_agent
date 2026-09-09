@@ -1,8 +1,20 @@
 # V1 DEMO IMPLEMENTATION — built for a deadline, not yet understood by
 # Miguel. Do not extend without a rebuild pass. See build spec Definition
 # of Done.
-"""LLM wrapper: Groq (Llama 3.3 70B) primary, Gemini fallback, MOCK_LLM=1
-third path with no network calls.
+"""LLM wrapper: Groq primary, Gemini fallback, MOCK_LLM=1 third path with
+no network calls.
+
+Groq model is openai/gpt-oss-20b, not the llama-3.3-70b-versatile the
+original build spec called for -- Groq had retired/gated that model off
+this account's tier by build time (confirmed against the live
+https://api.groq.com/openai/v1/models list and a direct completion call,
+both on 2026-09-08). 20b was picked over the larger gpt-oss-120b because,
+on this account, free-tier limits are IDENTICAL across gpt-oss-120b,
+gpt-oss-20b, and both Qwen models (1000 req/day, 8K tokens/min -- checked
+via the API's own x-ratelimit-* response headers, not just the docs) --
+so quota isn't a differentiator, and 20b is faster and half the price if
+this ever needs a paid tier. Re-check Groq's catalog/limits before reusing
+this code -- their free-tier lineup has already moved once.
 
 Only two things in this whole app actually need a real LLM call:
   1. classify_intent   — routing the conversation
@@ -104,7 +116,7 @@ def _chat_groq(system_prompt: str, user_prompt: str) -> str:
 
     client = Groq(api_key=GROQ_API_KEY)
     completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-20b",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

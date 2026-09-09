@@ -44,7 +44,7 @@ real Groq/Gemini instead.
 Missing API keys with `MOCK_LLM` unset fail immediately at startup with a
 clear error — never mid-conversation.
 
-## Status (Phase 2 of 4 complete)
+## Status (Phase 3 of 4 complete)
 
 - [x] `state.py`, `graph.py`, six nodes, feeding calculator (unit-tested),
       SQLite checkpointer, LLM wrapper (Groq → Gemini → mock),
@@ -53,8 +53,26 @@ clear error — never mid-conversation.
       `scripts/smoke.py`'s 4th conversation proves this across a real OS
       process boundary (two separate `python -c` subprocesses sharing only
       a sqlite file on disk), not just a fresh object in the same script
-- [ ] Phase 3: FastAPI + SSE, React/Vite frontend
+- [x] Phase 3: FastAPI + SSE (`valka_agent/api/main.py`), React/Vite
+      frontend (`frontend/`, text chat only). Escalation surfaces as a
+      real human-in-the-loop control: a banner + reply box that calls
+      `/api/resume`, not just a passive indicator.
 - [ ] Phase 4: voice, behind `VITE_ENABLE_VOICE` flag
+
+### Running the live demo (not just the smoke script)
+
+Two terminals for now (see Phase 3 notes below for why not one):
+
+```bash
+uv run uvicorn valka_agent.api.main:app --port 8000   # backend
+cd frontend && npm install && npm run dev              # frontend, :5173
+```
+
+Needs `GROQ_API_KEY` (or `GEMINI_API_KEY`) in `.env`, or `MOCK_LLM=1`, same
+startup check as the smoke script. **Note:** the build spec's original
+model choice, `llama-3.3-70b-versatile`, is no longer available on Groq's
+free tier (confirmed against the live API on 2026-09-08) — this now uses
+`openai/gpt-oss-20b`. See the comment in `llm.py` for why 20b over 120b.
 
 ## Design notes for the rebuild pass
 
@@ -75,6 +93,16 @@ clear error — never mid-conversation.
   templated/deterministic — kept that way on purpose to shrink the demo's
   network dependency surface. Revisit this if the real spec calls for LLM
   involvement elsewhere.
+- **The API's chat/resume endpoints are GET, not POST**, so the frontend
+  can use the browser's native `EventSource` for SSE instead of hand-rolling
+  a parser over `fetch()`'s streaming body — `EventSource` can't carry a
+  POST body, so the turn's text travels as a query param. Fine for a local
+  demo; would need to change for anything public-facing.
+- **Two terminals for the live demo** (`uvicorn` + `vite dev`), unlike
+  `scripts/demo.sh`'s one-command smoke path — no time tonight to write a
+  process-supervisor script that backgrounds one and traps the other's
+  Ctrl-C. `scripts/demo.sh` remains the one-command entry point for the
+  automated checks; this is only for driving the UI by hand.
 - **`scripts/smoke.py` uses its own throwaway sqlite db**, created fresh and
   deleted on every run — not the real `DB_PATH`. The demo conversations use
   hardcoded `thread_id`s, and the checkpointer persists state across process
