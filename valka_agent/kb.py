@@ -17,10 +17,19 @@ _STOPWORDS = {
     "and", "or", "does", "do", "it", "with", "on", "my", "dog", "food",
 }
 
+# Exact-word overlap means a query word and a doc word that only differ by
+# suffix (plural/gerund/etc.) never match -- "prices" (query) vs "Pricing"
+# (doc) share zero characters as tokens. Rather than a real stemmer, just
+# canonicalize the handful of word families this KB actually needs.
+_SYNONYMS = {
+    "prices": "price", "pricing": "price", "priced": "price",
+    "costs": "price", "cost": "price", "costing": "price",
+}
+
 
 def _tokenize(text: str) -> set[str]:
     words = re.findall(r"[a-z0-9]+", text.lower())
-    return {w for w in words if w not in _STOPWORDS}
+    return {_SYNONYMS.get(w, w) for w in words if w not in _STOPWORDS}
 
 
 # Keyword-overlap search fails a whole class of real questions: "what other
@@ -69,20 +78,26 @@ class KnowledgeBase:
             title = title_match.group(1) if title_match else name
             self.docs.append(KBDoc(source=name, title=title, text=text))
 
-    def search(self, query: str, top_k: int = 2, min_overlap: int = 1) -> list[KBDoc]:
+    def search(self, query: str, min_overlap: int = 1) -> list[KBDoc]:
         if _is_browse_all_query(query):
             return self.all_docs()
 
         q_tokens = _tokenize(query)
         if not q_tokens:
             return []
-        scored = []
-        for doc in self.docs:
-            overlap = len(q_tokens & doc.tokens)
-            if overlap >= min_overlap:
-                scored.append((overlap, doc))
-        scored.sort(key=lambda pair: pair[0], reverse=True)
-        return [doc for _, doc in scored[:top_k]]
+        scored = [(len(q_tokens & doc.tokens), doc) for doc in self.docs]
+        scored = [(overlap, doc) for overlap, doc in scored if overlap >= min_overlap]
+        if not scored:
+            return []
+
+        # Return every doc tied at the best score rather than a fixed top-N:
+        # a specific query ("beef and tripe") has one clear best match, but
+        # a query with no product-specific words (e.g. "what are the
+        # prices?", where every doc scores 1 on the shared "price" token)
+        # ties across the whole catalog -- a fixed top_k=2 would silently
+        # drop one product rather than answer the question asked.
+        best = max(overlap for overlap, _ in scored)
+        return [doc for overlap, doc in scored if overlap == best]
 
     def all_docs(self) -> list[KBDoc]:
         return list(self.docs)

@@ -18,3 +18,6 @@ day, split across 1–2 meals. Suitable for dogs transitioning from kibble or
 other raw diets.
 
 **Packaging (placeholder):** sold frozen in 1 lb chubs, 10 lb cases.
+
+**Pricing (placeholder):** $6.99 per 1 lb chub; $59.99 per 10 lb case
+($6.00/lb).

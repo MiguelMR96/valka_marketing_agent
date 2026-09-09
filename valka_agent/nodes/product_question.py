@@ -10,7 +10,7 @@ from valka_agent.nodes._helpers import last_human_text
 
 def product_question(state: dict) -> dict:
     query = last_human_text(state["messages"])
-    hits = get_kb().search(query, top_k=2)
+    hits = get_kb().search(query)
 
     if not hits:
         answer = (

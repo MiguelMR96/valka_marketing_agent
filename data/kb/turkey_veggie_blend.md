@@ -18,3 +18,6 @@ day, split across 1–2 meals. A lower-fat option often recommended for dogs
 with sensitive stomachs.
 
 **Packaging (placeholder):** sold frozen in 1 lb chubs, 10 lb cases.
+
+**Pricing (placeholder):** $6.49 per 1 lb chub; $54.99 per 10 lb case
+($5.50/lb).
