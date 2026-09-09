@@ -1,0 +1,41 @@
+# V1 DEMO IMPLEMENTATION — built for a deadline, not yet understood by
+# Miguel. Do not extend without a rebuild pass. See build spec Definition
+# of Done.
+#
+# Render Blueprint: deploys both services from one repo in one step
+# (Render dashboard -> New -> Blueprint -> point at this repo).
+#
+# The two envVars below (ALLOWED_ORIGINS, VITE_API_BASE) assume Render
+# grants the exact service names below as subdomains
+# (valka-agent-backend.onrender.com / valka-agent-frontend.onrender.com).
+# That only fails if those names are already taken by someone else on
+# Render, in which case it assigns a random suffix instead -- if so, after
+# the first deploy, check the real URLs in the dashboard and update these
+# two env vars to match, then trigger a manual redeploy of each service.
+# (Render's blueprint cross-service references only expose the private
+# network address, not the public URL, so this can't be fully automated.)
+services:
+  - type: web
+    name: valka-agent-backend
+    runtime: python
+    plan: free
+    buildCommand: "curl -LsSf https://astral.sh/uv/install.sh | sh && ~/.local/bin/uv sync"
+    startCommand: "~/.local/bin/uv run uvicorn valka_agent.api.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: MOCK_LLM
+        value: "0"
+      - key: ALLOWED_ORIGINS
+        value: "https://valka-agent-frontend.onrender.com"
+
+  - type: web
+    name: valka-agent-frontend
+    runtime: static
+    plan: free
+    rootDir: frontend
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE
+        value: "https://valka-agent-backend.onrender.com"

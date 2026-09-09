@@ -79,6 +79,35 @@ model choice, `llama-3.3-70b-versatile`, is no longer available on Groq's
 free tier (confirmed against the live API on 2026-09-08) — this now uses
 `openai/gpt-oss-20b`. See the comment in `llm.py` for why 20b over 120b.
 
+## Deploying (Render, free tier)
+
+`render.yaml` is a Render Blueprint that deploys both services in one step:
+a free Python web service for the backend and a free static site for the
+frontend. In the Render dashboard: **New -> Blueprint**, point it at this
+repo, and it reads `render.yaml` automatically.
+
+Render will prompt for `GROQ_API_KEY` during blueprint creation (marked
+`sync: false` in `render.yaml` so it's never committed) — paste your key
+there. Everything else (`MOCK_LLM`, `ALLOWED_ORIGINS`, `VITE_API_BASE`) is
+already set in the blueprint.
+
+**If the deployed frontend can't reach the backend** (chat just hangs):
+the blueprint assumes Render grants the exact subdomains
+`valka-agent-backend.onrender.com` / `valka-agent-frontend.onrender.com`.
+That only fails if those names are already taken by someone else on
+Render, in which case check the real URLs in the dashboard and manually
+update `ALLOWED_ORIGINS` (on the backend service) and `VITE_API_BASE` (on
+the frontend service) to match, then trigger a manual redeploy of each.
+
+**Known limitations of the free tier**, not bugs:
+- The backend sleeps after 15 min idle; the next request takes 30-60s to
+  wake it back up.
+- The backend's disk is ephemeral — `checkpoints.sqlite` resets on every
+  sleep/wake or redeploy, so conversation history (including any
+  in-progress feeding-transition/recommendation flow, or an escalated
+  thread waiting to be resumed) does not survive that. Fine for someone
+  trying the demo fresh; not a real memory store.
+
 ## Design notes for the rebuild pass
 
 - **Seven nodes** (six original + `gather_recommendation_info`) = one per

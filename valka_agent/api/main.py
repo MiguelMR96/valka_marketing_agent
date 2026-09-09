@@ -29,7 +29,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from sse_starlette.sse import EventSourceResponse
 
-from valka_agent.config import check_startup_config, DB_PATH
+from valka_agent.config import check_startup_config, DB_PATH, ALLOWED_ORIGINS
 from valka_agent.graph import build_graph, get_sqlite_checkpointer
 
 check_startup_config()
@@ -38,10 +38,7 @@ app = FastAPI(title="Valka Agent API (v1 demo)")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["GET"],
     allow_headers=["*"],
 )

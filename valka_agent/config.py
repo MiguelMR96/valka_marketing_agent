@@ -15,6 +15,14 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 VITE_ENABLE_VOICE = os.getenv("VITE_ENABLE_VOICE", "false") == "true"
 
 DB_PATH = os.getenv("VALKA_DB_PATH", "checkpoints.sqlite")
+
+# Comma-separated list, e.g. "https://valka-agent-frontend.onrender.com".
+# The localhost defaults keep local dev working; a deployed frontend origin
+# gets added on top rather than replacing them, so the same backend still
+# works if you run the frontend locally against a deployed API.
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()
+] + ["http://localhost:5173", "http://127.0.0.1:5173"]
 KB_DIR = os.getenv("VALKA_KB_DIR", os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "kb"
 ))

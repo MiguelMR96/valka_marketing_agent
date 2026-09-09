@@ -9,7 +9,10 @@
 // human-in-the-loop control, not just a visible-but-inert indicator.
 import { useEffect, useRef, useState } from "react";
 
-const API_BASE = "http://localhost:8000";
+// VITE_API_BASE is baked in at build time (Vite only exposes env vars
+// prefixed VITE_ to client code). Render's static site build sets this to
+// the deployed backend's URL; falls back to localhost for local dev.
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 function getThreadId() {
   const key = "valka-thread-id";
