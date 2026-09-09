@@ -40,6 +40,12 @@ Classify the user's latest message into exactly one of these categories:
 - escalate: complaint, refund request, a sick/injured pet, wants a human, anything urgent
 - smalltalk: greetings, thanks, chit-chat not covered above
 
+You may be given recent conversation history before the latest message.
+Use it only to resolve short follow-ups that have no meaning on their own
+("list them all", "what about that one", "yes please") by continuing the
+same category as the turn they're following up on. If the latest message
+stands on its own, classify it on its own merits and ignore the history.
+
 Reply with ONLY the category name, nothing else."""
 
 _PRODUCT_SYSTEM_PROMPT = """You are a helpful assistant for a raw pet food company.
@@ -63,11 +69,19 @@ def _mock_classify(text: str) -> str:
     return "smalltalk"
 
 
-def classify_intent(latest_message: str) -> str:
+def classify_intent(latest_message: str, history: str = "") -> str:
     if MOCK_LLM:
+        # The offline heuristic classifier only ever looks at latest_message
+        # in isolation -- it has no way to use history, so context-dependent
+        # follow-ups ("list them all") won't classify correctly in mock mode.
+        # Acceptable: MOCK_LLM is the no-network fallback, not the daily path.
         return _mock_classify(latest_message)
 
-    result = _chat(_INTENT_SYSTEM_PROMPT, latest_message)
+    user_prompt = latest_message
+    if history:
+        user_prompt = f"Recent conversation:\n{history}\n\nLatest message: {latest_message}"
+
+    result = _chat(_INTENT_SYSTEM_PROMPT, user_prompt)
     if result is None:
         return _mock_classify(latest_message)
 

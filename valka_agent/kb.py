@@ -23,6 +23,26 @@ def _tokenize(text: str) -> set[str]:
     return {w for w in words if w not in _STOPWORDS}
 
 
+# Keyword-overlap search fails a whole class of real questions: "what other
+# products do you have" shares zero tokens with any single product doc (the
+# docs don't contain the word "other", and "products" != "product"), so it
+# always fell through to the "I don't have that info" fallback even though
+# the KB obviously has an answer -- just not one tied to a single doc. Catch
+# that class explicitly and hand back every doc instead of searching.
+_BROWSE_ALL_PATTERN = re.compile(
+    r"\b(other|all|more)\s+products\b"
+    r"|\bwhat\s+(products|do\s+you\s+(have|sell|offer|carry))\b"
+    r"|\blist\s+(them|everything|all|products)\b"
+    r"|\b(full\s+)?catalog\b"
+    r"|\bwhat\s+(are\s+)?(my|the)\s+options\b",
+    re.IGNORECASE,
+)
+
+
+def _is_browse_all_query(query: str) -> bool:
+    return bool(_BROWSE_ALL_PATTERN.search(query))
+
+
 class KBDoc:
     def __init__(self, source: str, title: str, text: str):
         self.source = source
@@ -50,6 +70,9 @@ class KnowledgeBase:
             self.docs.append(KBDoc(source=name, title=title, text=text))
 
     def search(self, query: str, top_k: int = 2, min_overlap: int = 1) -> list[KBDoc]:
+        if _is_browse_all_query(query):
+            return self.all_docs()
+
         q_tokens = _tokenize(query)
         if not q_tokens:
             return []
@@ -60,6 +83,9 @@ class KnowledgeBase:
                 scored.append((overlap, doc))
         scored.sort(key=lambda pair: pair[0], reverse=True)
         return [doc for _, doc in scored[:top_k]]
+
+    def all_docs(self) -> list[KBDoc]:
+        return list(self.docs)
 
 
 _kb_instance: KnowledgeBase | None = None

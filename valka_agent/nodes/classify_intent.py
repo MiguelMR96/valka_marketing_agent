@@ -2,7 +2,7 @@
 # Miguel. Do not extend without a rebuild pass. See build spec Definition
 # of Done.
 from valka_agent import llm
-from valka_agent.nodes._helpers import last_human_text, missing_transition_fields
+from valka_agent.nodes._helpers import last_human_text, missing_transition_fields, recent_history_text
 
 
 def classify_intent(state: dict) -> dict:
@@ -18,7 +18,8 @@ def classify_intent(state: dict) -> dict:
         return {"intent": "feeding_transition", "awaiting_human": False, "escalation_reason": None}
 
     text = last_human_text(state["messages"])
-    intent = llm.classify_intent(text)
+    history = recent_history_text(state["messages"])
+    intent = llm.classify_intent(text, history=history)
 
     if intent == "escalate":
         # Set these here, before the escalate node's interrupt() pauses the
