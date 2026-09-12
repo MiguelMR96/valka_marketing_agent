@@ -20,7 +20,13 @@ services:
     runtime: python
     plan: free
     buildCommand: "curl -LsSf https://astral.sh/uv/install.sh | sh && ~/.local/bin/uv sync"
-    startCommand: "~/.local/bin/uv run uvicorn valka_agent.api.main:app --host 0.0.0.0 --port $PORT"
+    # Not "uv run uvicorn ...": the uv binary installed during buildCommand
+    # doesn't carry over to the runtime container on Render (only the build
+    # OUTPUT does, i.e. the .venv uv sync created) -- confirmed by a failed
+    # deploy where startCommand hit "uv: No such file or directory" despite
+    # the build succeeding. Calling the venv's uvicorn directly sidesteps
+    # needing uv to exist at start time at all.
+    startCommand: ".venv/bin/uvicorn valka_agent.api.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: GROQ_API_KEY
         sync: false
