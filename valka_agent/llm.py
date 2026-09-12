@@ -35,18 +35,22 @@ VALID_INTENTS = {
 
 _INTENT_SYSTEM_PROMPT = """You are an intent classifier for a pet food company's chat agent.
 Classify the user's latest message into exactly one of these categories:
-- product_question: asking about ingredients, nutrition, a specific named product
+- product_question: asking about ingredients, nutrition, or a specific named product -- including asking what products exist at all ("what products do you have", "what's available", "list them all"). Anything that's really just "tell me about your catalog" belongs here even without a specific product name.
 - feeding_transition: wants to switch/transition their dog to a new food or raw diet
-- product_recommendation: wants a suggestion for which product to buy/pick ("what do you recommend", "which one is best for my dog"), not asking about a specific named product
+- product_recommendation: wants a PERSONALIZED suggestion for which product to pick given their dog's needs ("what do you recommend for my dog", "which one is best for a sensitive stomach") -- not a request to just see what's available
 - order_status: asking about an existing order, shipping, delivery
 - escalate: complaint, refund request, a sick/injured pet, wants a human, anything urgent
 - smalltalk: greetings, thanks, chit-chat not covered above
 
 You may be given recent conversation history before the latest message.
-Use it only to resolve short follow-ups that have no meaning on their own
-("list them all", "what about that one", "yes please") by continuing the
-same category as the turn they're following up on. If the latest message
-stands on its own, classify it on its own merits and ignore the history.
+Only use it to resolve a message that is GRAMMATICALLY INCOMPLETE on its
+own and would otherwise be meaningless -- a bare pronoun/reference
+("that one", "the second one"), a one-word confirmation ("yes", "sure"),
+or an explicit continuation ("what about that one instead"). A message
+that is a complete, freestanding question on its own topic -- even if it
+follows a different flow's question in the transcript -- is NOT a
+follow-up: classify it purely on its own merits and ignore the history.
+When in doubt, prefer classifying on the message alone.
 
 Reply with ONLY the category name, nothing else."""
 
@@ -74,7 +78,9 @@ def _mock_classify(text: str) -> str:
         return "feeding_transition"
     if any(k in t for k in ("recommend", "suggest", "which one", "what should i", "best for my dog", "what would you")):
         return "product_recommendation"
-    if any(k in t for k in ("ingredient", "contains", "made of", "protein", "blend", "what's in", "whats in", "nutrition")):
+    if any(k in t for k in ("ingredient", "contains", "made of", "protein", "blend", "what's in", "whats in", "nutrition",
+                             "what products", "products do you", "what do you have", "what do you sell",
+                             "what's available", "whats available", "list them", "list your", "catalog")):
         return "product_question"
     if any(k in t for k in ("hi", "hello", "hey", "thanks", "thank you", "how are you", "good morning", "good afternoon")):
         return "smalltalk"

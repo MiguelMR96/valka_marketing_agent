@@ -25,11 +25,11 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 from valka_agent.state import AgentState
 from valka_agent.config import DB_PATH
-from valka_agent.nodes._helpers import missing_transition_fields, missing_recommendation_fields
+from valka_agent.nodes._helpers import missing_transition_fields, missing_recommendation_fields, last_human_text
 from valka_agent.nodes.classify_intent import classify_intent
 from valka_agent.nodes.product_question import product_question
-from valka_agent.nodes.gather_transition_info import gather_transition_info
-from valka_agent.nodes.gather_recommendation_info import gather_recommendation_info
+from valka_agent.nodes.gather_transition_info import gather_transition_info, _extract_fields as _extract_transition_fields
+from valka_agent.nodes.gather_recommendation_info import gather_recommendation_info, _extract_fields as _extract_recommendation_fields
 from valka_agent.nodes.order_status import order_status
 from valka_agent.nodes.escalate import escalate
 from valka_agent.nodes.smalltalk import smalltalk
@@ -43,10 +43,10 @@ _INTENT_TO_NODE = {
     "smalltalk": "smalltalk",
 }
 
-# (persisted intent value, state field, missing-fields check, node to loop back to)
+# (persisted intent value, state field, missing-fields check, extractor, node to loop back to)
 _LOOP_BACK_ROUTES = (
-    ("feeding_transition", "transition_data", missing_transition_fields, "gather_transition_info"),
-    ("product_recommendation", "recommendation_data", missing_recommendation_fields, "gather_recommendation_info"),
+    ("feeding_transition", "transition_data", missing_transition_fields, _extract_transition_fields, "gather_transition_info"),
+    ("product_recommendation", "recommendation_data", missing_recommendation_fields, _extract_recommendation_fields, "gather_recommendation_info"),
 )
 
 
@@ -55,8 +55,24 @@ def _route_from_entry(state: AgentState) -> str:
     # intent*, not on the data field being non-empty — the opening turn
     # ("I want to switch my dog to raw") legitimately captures zero fields,
     # so truthiness alone can't detect an in-progress flow.
-    for intent, field, missing_fn, node in _LOOP_BACK_ROUTES:
-        if state.get("intent") == intent and missing_fn(state.get(field) or {}):
+    #
+    # But that alone isn't enough on turn 2+: if the persisted intent is
+    # still "product_recommendation" with fields missing, EVERY subsequent
+    # message used to get routed straight back into the gather node no
+    # matter what it said -- so an unrelated question ("what products are
+    # available?") got silently fed to the field extractor, which found
+    # nothing and just re-asked the same clarifying question forever, with
+    # no way out. Only loop back if the new message actually extracts
+    # something toward the fields still missing; otherwise fall through to
+    # classify_intent so a topic change gets a fresh routing decision.
+    for intent, field, missing_fn, extract_fn, node in _LOOP_BACK_ROUTES:
+        if state.get("intent") != intent:
+            continue
+        missing = missing_fn(state.get(field) or {})
+        if not missing:
+            continue
+        text = last_human_text(state["messages"])
+        if extract_fn(text, missing):
             return node
     return "classify_intent"
 
