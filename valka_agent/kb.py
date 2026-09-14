@@ -17,26 +17,22 @@ and _SYNONYMS below, both grown that way during the bilingual rebuild).
 Embeddings generalize across phrasing without a new rule per phrasing.
 
 Threshold caveat: cosine similarity on this KB doesn't cleanly separate
-relevant from irrelevant by a single magnitude cutoff -- empirically, on
-the current 3-doc placeholder catalog (all short, similar-domain
-raw-dog-food descriptions), a query naming one product clearly separates
-from the rest (e.g. "beef and tripe blend" -> 0.76 vs 0.66-0.68 for the
-other two), but a genuinely off-topic query still doesn't score near zero
-("how is the weather today" -> ~0.54-0.55; "do you sell cat food" -> ~0.63,
-close enough to genuine catalog-browse queries like "what are your
-cheapest products" -> ~0.64-0.65 that magnitude alone can't tell them
-apart). So ranking uses floor + margin instead of one flat threshold: a
+relevant from irrelevant by a single magnitude cutoff -- empirically (on
+the original 3-doc placeholder catalog, since re-verified after the
+2026-09-14 switch to real product data), a query naming one product
+clearly separates from the rest, but a genuinely off-topic query still
+doesn't score near zero, and can land close to genuine catalog-browse
+queries. So ranking uses floor + margin instead of one flat threshold: a
 SEMANTIC_FLOOR below the top score means nothing is relevant at all;
 above the floor, every doc within SEMANTIC_MARGIN of the top score is
 returned as "tied" (handles both "one clear best match" and "no single
 doc stands out, return the whole relevant set" cases). Both constants are
-tuned to this specific placeholder catalog's score distribution, not
-universal -- re-tune once real (larger, more varied) KB content replaces
-the placeholders. This is a soft filter, not the only safety net:
-answer_with_context's system prompt already refuses to answer from
-context that doesn't actually address the question, so a marginal/wrong
-retrieval (e.g. "cat food" still clearing the floor) degrades to "I don't
-see that in our catalog" rather than a hallucinated answer.
+tuned to this KB's score distribution, not universal -- re-tune if the
+catalog grows a lot more (many more, more varied docs). This is a soft
+filter, not the only safety net: answer_with_context's system prompt
+already refuses to answer from context that doesn't actually address the
+question, so a marginal/wrong retrieval degrades to "I don't see that in
+our catalog" rather than a hallucinated answer.
 """
 import glob
 import math
@@ -113,7 +109,37 @@ def _is_browse_all_query(query: str) -> bool:
     return bool(_BROWSE_ALL_PATTERN.search(query))
 
 
-_PRICE_PER_LB_RE = re.compile(r"\$(\d+\.\d+)/lb")
+# Matches a pricing table row like "| 2 lb | $14.44 | $8.66 | $13.00 |" or
+# "| 14 oz | $37.19 | $22.31 | $33.47 |" -- see data/kb/*.md's "Pricing
+# (working, pending approval)" tables. The header/separator rows don't
+# match (they don't start with a number), so no special-casing is needed
+# to skip them.
+_PACKAGE_ROW_RE = re.compile(
+    r"^\|\s*(\d+(?:\.\d+)?)\s*(lb|oz)\s*\|\s*\$(\d+\.\d+)\s*\|\s*\$(\d+\.\d+)\s*\|\s*\$(\d+\.\d+)\s*\|\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+_OZ_PER_LB = 16.0
+
+
+def _parse_packages(text: str) -> list[dict]:
+    """Real per-package pricing (regular / 40% intro / 10% subscription),
+    parsed from each doc's pricing table. oz sizes are converted to lb so
+    calculator.py's math (all in lb) doesn't need to care about units.
+    Returns [] for docs with no pricing table (or a malformed one) --
+    calculator.py already treats an empty/missing packages list as "no
+    price data available" rather than guessing."""
+    packages = []
+    for size_value, unit, regular, intro40, sub10 in _PACKAGE_ROW_RE.findall(text):
+        size_value = float(size_value)
+        size_lb = size_value if unit.lower() == "lb" else size_value / _OZ_PER_LB
+        packages.append({
+            "size_label": f"{size_value:g} {unit.lower()}",
+            "size_lb": round(size_lb, 4),
+            "regular": float(regular),
+            "intro40": float(intro40),
+            "sub10": float(sub10),
+        })
+    return packages
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -132,11 +158,7 @@ class KBDoc:
         self.text = text
         self.tokens = _tokenize(title + " " + text)
         self.embedding: list[float] | None = None
-        # Every current product doc ends its pricing line with a "($X.XX/lb)"
-        # figure -- reuse that instead of inventing a second placeholder
-        # price in calculator.py. None if a doc doesn't state one.
-        price_match = _PRICE_PER_LB_RE.search(text)
-        self.price_per_lb = float(price_match.group(1)) if price_match else None
+        self.packages = _parse_packages(text)
 
 
 class KnowledgeBase:
@@ -215,7 +237,7 @@ class KnowledgeBase:
 
     def search(self, query: str) -> list[KBDoc]:
         if _is_browse_all_query(query):
-            return self.all_docs()
+            return self.product_docs()
 
         semantic_hits = self._semantic_search(query)
         if semantic_hits is not None:
@@ -225,6 +247,16 @@ class KnowledgeBase:
 
     def all_docs(self) -> list[KBDoc]:
         return list(self.docs)
+
+    def product_docs(self) -> list[KBDoc]:
+        """Docs that are actual purchasable products (have a pricing
+        table -- see KBDoc.packages) rather than informational content
+        like about_valka.md or promotions_and_shipping.md. Used wherever
+        the KB needs to hand over "the catalog" specifically -- a "what
+        products do you have" browse-all query, or gather_recommendation_info's
+        recommend-one-product call -- so brand/policy docs don't get
+        offered up as if they were products to pick from."""
+        return [doc for doc in self.docs if doc.packages]
 
 
 _kb_instance: KnowledgeBase | None = None

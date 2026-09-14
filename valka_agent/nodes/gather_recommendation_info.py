@@ -153,7 +153,7 @@ def gather_recommendation_info(state: dict) -> dict:
             "messages": [AIMessage(content=_next_question(now_missing, language))],
         }
 
-    docs = get_kb().all_docs()
+    docs = get_kb().product_docs()
     answer = llm.recommend_product(merged, [doc.text for doc in docs], language=language)
     return {
         "recommendation_data": extracted,

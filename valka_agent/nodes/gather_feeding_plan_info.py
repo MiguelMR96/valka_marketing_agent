@@ -241,7 +241,7 @@ def gather_feeding_plan_info(state: dict) -> dict:
         }
 
     kb_matches = get_kb().search(merged["target_product"])
-    price_per_lb = kb_matches[0].price_per_lb if len(kb_matches) == 1 else None
+    packages = kb_matches[0].packages if len(kb_matches) == 1 else None
 
     result = calculate_feeding_plan(
         weight_lbs=merged["weight_lbs"],
@@ -250,7 +250,7 @@ def gather_feeding_plan_info(state: dict) -> dict:
         activity_level=merged["activity_level"],
         body_condition=merged["body_condition"],
         percent_valka=merged["percent_valka"],
-        price_per_lb=price_per_lb,
+        packages=packages,
     )
     response = format_feeding_plan_message(merged["target_product"], result, language)
     return {

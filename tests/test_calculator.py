@@ -5,7 +5,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
-from valka_agent.calculator import calculate_feeding_plan
+from valka_agent.calculator import calculate_feeding_plan, _standard_shipping_cost
+
+# Mirrors Everyday Wag's real pricing table (data/kb/everyday_wag.md).
+EVERYDAY_WAG_PACKAGES = [
+    {"size_label": "2 lb", "size_lb": 2.0, "regular": 14.44, "intro40": 8.66, "sub10": 13.00},
+    {"size_label": "10 lb", "size_lb": 10.0, "regular": 71.39, "intro40": 42.83, "sub10": 64.25},
+    {"size_label": "38 lb", "size_lb": 38.0, "regular": 209.09, "intro40": 125.45, "sub10": 188.18},
+]
 
 
 def test_adult_ideal_moderate_daily_amount():
@@ -70,25 +77,46 @@ def test_invalid_percent_valka_raises():
 
 
 def test_package_combo_covers_monthly_need():
-    result = calculate_feeding_plan(60, 1, "adult", "moderate", "ideal", 100)
+    result = calculate_feeding_plan(60, 1, "adult", "moderate", "ideal", 100, packages=EVERYDAY_WAG_PACKAGES)
     covered = sum(item["size_lb"] * item["qty"] for item in result["package_combo"])
     assert covered >= result["monthly_valka_lb"]
 
 
-def test_package_combo_uses_default_case_and_chub_sizes():
-    result = calculate_feeding_plan(60, 1, "adult", "moderate", "ideal", 100)
+def test_package_combo_uses_real_sizes():
+    result = calculate_feeding_plan(60, 1, "adult", "moderate", "ideal", 100, packages=EVERYDAY_WAG_PACKAGES)
     sizes_used = {item["size_lb"] for item in result["package_combo"]}
-    assert sizes_used <= {10, 1}
+    assert sizes_used <= {2.0, 10.0, 38.0}
 
 
-def test_no_price_per_lb_omits_cost_estimate():
+def test_no_packages_omits_cost_and_shipping_estimate():
     result = calculate_feeding_plan(60, 1, "adult", "moderate", "ideal", 100)
     assert result["monthly_cost_estimate"] is None
+    assert result["shipping_cost_estimate"] is None
 
 
-def test_price_per_lb_computes_cost_estimate():
-    result = calculate_feeding_plan(60, 1, "adult", "moderate", "ideal", 100, price_per_lb=6.0)
-    assert result["monthly_cost_estimate"] == pytest.approx(result["monthly_valka_lb"] * 6.0)
+def test_package_cost_sums_real_regular_prices_not_a_flat_rate():
+    # 60 lb adult, 100% Valka -> daily 1.5 lb, monthly 45 lb. Greedy combo:
+    # one 38 lb ($209.09) covers 38, leaving 7 lb -> four 2 lb bags ($14.44
+    # each) cover the rest (8 lb, rounds up past 7). Real per-size pricing
+    # isn't linear, so this must equal the actual summed package prices,
+    # not monthly_lb * some average $/lb rate.
+    result = calculate_feeding_plan(60, 1, "adult", "moderate", "ideal", 100, packages=EVERYDAY_WAG_PACKAGES)
+    expected_cost = 209.09 + 4 * 14.44
+    assert result["monthly_cost_estimate"] == pytest.approx(expected_cost, abs=0.01)
+
+
+def test_shipping_tiers():
+    assert _standard_shipping_cost(0) == 39.0
+    assert _standard_shipping_cost(74.99) == 39.0
+    assert _standard_shipping_cost(75) == 19.0
+    assert _standard_shipping_cost(179.99) == 19.0
+    assert _standard_shipping_cost(180) == 0.0
+    assert _standard_shipping_cost(500) == 0.0
+
+
+def test_shipping_estimate_reflects_the_real_cost_tier():
+    result = calculate_feeding_plan(60, 1, "adult", "moderate", "ideal", 100, packages=EVERYDAY_WAG_PACKAGES)
+    assert result["shipping_cost_estimate"] == _standard_shipping_cost(result["monthly_cost_estimate"])
 
 
 def test_pregnant_lactating_raises_instead_of_computing():

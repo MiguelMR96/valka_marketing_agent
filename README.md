@@ -11,12 +11,14 @@
 > docstring for citations), not approved Valka/vet numbers — pending
 > verification and family/vet sign-off before production use.
 
-## ⚠️ Placeholder knowledge base
+## ⚠️ Knowledge base: real data, pending approval
 
-`data/kb/*.md` are **invented placeholder products**, not real Valka
-content — the real scrape wasn't available at build time. See
-`data/kb/README_PLACEHOLDER.md`. **Swap these before showing anyone who
-knows the real product line.**
+`data/kb/*.md` now holds real proposed Valka product/pricing/promo data
+(2026-09-14), replacing the earlier invented placeholders — but it's not
+yet formally approved (unchecked approval boxes in the source documents).
+See `data/kb/README_PLACEHOLDER.md` for what's real vs. still pending, and
+`CLAUDE.md` for the brand rules the bot must never violate (never surface
+BJ's internal pricing, never imply Valka/BJ's products are identical).
 
 ## Setup
 

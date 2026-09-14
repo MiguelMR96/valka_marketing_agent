@@ -95,12 +95,12 @@ def send(graph, thread_id: str, text: str) -> dict:
 def conversation_1_product_question(graph):
     print("\n=== Conversation 1: product question ===")
     result = send(graph, "demo-1-product-question",
-                  "What's in the Beef & Tripe Blend?")
+                  "What's in Everyday Wag?")
     check("routed to product_question", result["intent"] == "product_question",
           f"got intent={result['intent']!r}")
     check("kb_citations populated", len(result["kb_citations"]) > 0,
           f"got kb_citations={result['kb_citations']!r}")
-    check("cites the beef & tripe doc", "beef_tripe_blend.md" in result["kb_citations"],
+    check("cites the everyday wag doc", "everyday_wag.md" in result["kb_citations"],
           f"got kb_citations={result['kb_citations']!r}")
 
 
@@ -132,15 +132,17 @@ def conversation_2_feeding_plan(graph):
         kw in r3["messages"][-1].content.lower() for kw in ("which product", "percentage")
     ), r3["messages"][-1].content)
 
-    r4 = send(graph, thread_id, "Beef & Tripe Blend, 100%.")
+    r4 = send(graph, thread_id, "Everyday Wag, 100%.")
     fpd = r4["feeding_plan_data"]
-    check("captured target_product", fpd.get("target_product") == "Beef & Tripe Blend",
+    check("captured target_product", fpd.get("target_product") == "Everyday Wag",
           f"got feeding_plan_data={fpd!r}")
     check("captured percent_valka=100", fpd.get("percent_valka") == 100, f"got feeding_plan_data={fpd!r}")
 
     reply = r4["messages"][-1].content
     check("plan mentions daily total (1.5 lb)", "1.5" in reply, reply)
     check("plan mentions a cost estimate", "cost" in reply.lower(), reply)
+    check("plan mentions shipping", "shipping" in reply.lower(), reply)
+    check("plan never mentions BJ's pricing", "bj" not in reply.lower(), reply)
 
 
 def conversation_5_product_recommendation(graph):
@@ -160,14 +162,13 @@ def conversation_5_product_recommendation(graph):
           f"got recommendation_data={rd!r}")
     check("captured priority=budget", rd.get("priority") == "budget",
           f"got recommendation_data={rd!r}")
-    check("kb_citations covers the full catalog", len(r2["kb_citations"]) == len(get_kb().all_docs()),
+    check("kb_citations covers the full catalog", len(r2["kb_citations"]) == len(get_kb().product_docs()),
           f"got kb_citations={r2['kb_citations']!r}")
     # Not asserting on the recommendation's actual product pick here: under
     # MOCK_LLM that text is a blind truncated echo of the catalog (same
     # limitation as product_question's mock, see llm.py), not real
-    # reasoning about price/fit. Verified manually against real Groq that
-    # this exact scenario (no allergies, budget priority) correctly
-    # recommends Turkey & Veggie Blend, the cheapest of the three.
+    # reasoning about price/fit -- verify the real-LLM pick manually
+    # against the current pricing in data/kb/*.md if this matters.
 
 
 def conversation_3_order_status(graph):
@@ -192,7 +193,7 @@ def conversation_6_spanish_bilingual(graph):
     r2 = send(graph, thread_id, "¿Qué productos tienen disponibles?")
     check("routed to product_question", r2["intent"] == "product_question",
           f"got intent={r2['intent']!r}")
-    check("Spanish browse-all query matched the full catalog", len(r2["kb_citations"]) == len(get_kb().all_docs()),
+    check("Spanish browse-all query matched the full catalog", len(r2["kb_citations"]) == len(get_kb().product_docs()),
           f"got kb_citations={r2['kb_citations']!r}")
 
 

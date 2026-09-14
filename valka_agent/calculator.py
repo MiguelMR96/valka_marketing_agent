@@ -17,10 +17,13 @@ veterinary sources and final sign-off. Swap these before production use.
 Per the brief (p.8): "Usar fórmulas y reglas validadas. No inventar
 porciones... sin reglas previamente aprobadas."
 
-Pricing/packaging are NOT invented here at all -- they're read from the
-matching product's KB doc (see kb.py's KBDoc.price_per_lb) by the caller
-and passed in; if no price is available, cost is omitted rather than
-guessed (see calculate_feeding_plan's price_per_lb=None handling).
+Pricing/packaging/shipping are NOT invented here at all -- pricing is
+read from the matching product's real (working-reference) pricing table
+in its KB doc (see kb.py's KBDoc.packages) by the caller and passed in;
+if a product has no price data (e.g. no match, or a topper that isn't
+meant to be the main blend food), cost and shipping are omitted rather
+than guessed. Shipping tiers are Valka's real approved thresholds
+(Valka_Brand_Pricing_Shipping_Approval_Guide.pdf).
 """
 
 # Base daily % of body weight by life stage. Adult 2.5% and senior ~1.5-2%
@@ -64,18 +67,24 @@ MIN_DAILY_PCT = 0.01  # floor so no combination of deltas goes to ~0/negative
 
 VALID_PERCENT_VALKA = (25, 50, 75, 100)
 
-# Mirrors the packaging convention already stated in every data/kb/*.md doc
-# ("sold frozen in 1 lb chubs, 10 lb cases") -- default combo sizes, largest
-# first, used by the greedy packer below.
-DEFAULT_PACKAGE_SIZES_LB = (10, 1)
-
 DAYS_PER_WEEK = 7
 DAYS_PER_MONTH = 30  # approximation, not a calendar month
 
-# Placeholder default: no package-size-based delivery cadence logic exists
-# yet (that would itself be an invented rule) -- fixed monthly cadence until
-# real ops/subscription data (brief p.7: "frecuencia de entrega") lands.
+# No real subscription-cadence rule was given (subscriptions are
+# customer-controlled: skip/pause/adjust anytime) -- keep a reasonable
+# default rather than inventing a formula from package sizes.
 DEFAULT_DELIVERY_FREQUENCY_WEEKS = 4
+
+# Real approved shipping tiers (Valka_Brand_Pricing_Shipping_Approval_Guide.pdf),
+# applied to the order subtotal after discounts. Standard shipping only --
+# 2nd Day Air ($75) / Next Day Air ($125) exist but aren't estimated here,
+# this is an informational estimate, not a live checkout quote.
+def _standard_shipping_cost(subtotal: float) -> float:
+    if subtotal < 75:
+        return 39.0
+    if subtotal < 180:
+        return 19.0
+    return 0.0
 
 
 def _daily_pct(life_stage: str, activity_level: str, body_condition: str) -> float:
@@ -99,28 +108,42 @@ def _daily_pct(life_stage: str, activity_level: str, body_condition: str) -> flo
     return max(pct, MIN_DAILY_PCT)
 
 
-def _pack_combo(total_lb: float, package_sizes_lb: tuple) -> list[dict]:
+def _pack_combo(total_lb: float, packages: list[dict]) -> tuple[list[dict], float | None]:
     """Greedy pack: cover total_lb using the largest package sizes first,
     rounding up (never under-deliver). Deterministic, not cost-optimal for
     every edge case, but matches a simple real-world "biggest box first"
-    fulfillment pattern well enough for a placeholder."""
-    sizes = sorted(package_sizes_lb, reverse=True)
+    fulfillment pattern.
+
+    Returns (combo, total_cost). Cost sums each chosen package's real
+    *regular* price directly -- real per-size pricing isn't linear (a 10 lb
+    bag isn't simply 5x a 2 lb bag), so this is more accurate than the old
+    placeholder approach of multiplying total lb by one average $/lb rate.
+    total_cost is None if `packages` is empty (no pricing data for this
+    product -- e.g. unmatched product, or a topper not meant to be the
+    main blend food)."""
+    if not packages:
+        return [], None
+
+    sizes = sorted(packages, key=lambda p: p["size_lb"], reverse=True)
     remaining = total_lb
-    combo = []
-    for size in sizes:
+    combo: list[dict] = []
+    cost = 0.0
+    for pkg in sizes:
         if remaining <= 0:
             break
-        qty = int(remaining // size)
+        qty = int(remaining // pkg["size_lb"]) if pkg["size_lb"] > 0 else 0
         if qty > 0:
-            combo.append({"size_lb": size, "qty": qty})
-            remaining = round(remaining - qty * size, 3)
+            combo.append({"size_label": pkg["size_label"], "size_lb": pkg["size_lb"], "qty": qty})
+            cost += qty * pkg["regular"]
+            remaining = round(remaining - qty * pkg["size_lb"], 4)
     if remaining > 0:
         smallest = sizes[-1]
-        if combo and combo[-1]["size_lb"] == smallest:
+        if combo and combo[-1]["size_lb"] == smallest["size_lb"]:
             combo[-1]["qty"] += 1
         else:
-            combo.append({"size_lb": smallest, "qty": 1})
-    return combo
+            combo.append({"size_label": smallest["size_label"], "size_lb": smallest["size_lb"], "qty": 1})
+        cost += smallest["regular"]
+    return combo, round(cost, 2)
 
 
 def calculate_feeding_plan(
@@ -130,8 +153,7 @@ def calculate_feeding_plan(
     activity_level: str,
     body_condition: str,
     percent_valka: int,
-    price_per_lb: float | None = None,
-    package_sizes_lb: tuple = DEFAULT_PACKAGE_SIZES_LB,
+    packages: list[dict] | None = None,
 ) -> dict:
     if weight_lbs <= 0:
         raise ValueError("weight_lbs must be positive")
@@ -152,10 +174,9 @@ def calculate_feeding_plan(
     weekly_valka_lb = round(daily_valka_lb * DAYS_PER_WEEK, 3)
     monthly_valka_lb = round(daily_valka_lb * DAYS_PER_MONTH, 3)
 
-    package_combo = _pack_combo(monthly_valka_lb, package_sizes_lb)
-
-    monthly_cost_estimate = (
-        round(monthly_valka_lb * price_per_lb, 2) if price_per_lb is not None else None
+    package_combo, monthly_cost_estimate = _pack_combo(monthly_valka_lb, packages or [])
+    shipping_cost_estimate = (
+        _standard_shipping_cost(monthly_cost_estimate) if monthly_cost_estimate is not None else None
     )
 
     return {
@@ -172,14 +193,14 @@ def calculate_feeding_plan(
         "weekly_valka_lb": weekly_valka_lb,
         "monthly_valka_lb": monthly_valka_lb,
         "package_combo": package_combo,
-        "price_per_lb": price_per_lb,
         "monthly_cost_estimate": monthly_cost_estimate,
+        "shipping_cost_estimate": shipping_cost_estimate,
         "delivery_frequency_weeks": DEFAULT_DELIVERY_FREQUENCY_WEEKS,
     }
 
 
 def _format_combo(combo: list[dict]) -> str:
-    return ", ".join(f"{item['qty']} x {item['size_lb']:g} lb" for item in combo)
+    return ", ".join(f"{item['qty']} x {item['size_label']}" for item in combo)
 
 
 _LIFE_STAGE_ES = {"puppy": "cachorro", "adult": "adulto", "senior": "mayor"}
@@ -207,17 +228,18 @@ def format_feeding_plan_message(target_product: str, result: dict, language: str
             f"- Combinación de envases sugerida: {combo}",
         ]
         if result["monthly_cost_estimate"] is not None:
-            lines.append(f"- Costo mensual estimado: ${result['monthly_cost_estimate']:.2f}")
+            lines.append(f"- Costo mensual estimado (precio regular): ${result['monthly_cost_estimate']:.2f}")
+            lines.append(f"- Envío estándar estimado: {_format_shipping_es(result['shipping_cost_estimate'])}")
         else:
             lines.append("- Costo mensual estimado: no disponible por ahora para este producto.")
         lines.append(
             f"- Frecuencia de entrega sugerida: cada {result['delivery_frequency_weeks']} semanas"
         )
+        lines.append("")
         lines.append(
-            ""
-        )
-        lines.append(
-            "Recuerda: puedes ajustar el porcentaje Valka (25/50/75/100%) cuando quieras, a tu manera."
+            "Recuerda: puedes ajustar el porcentaje Valka (25/50/75/100%) cuando quieras, a tu manera. "
+            "¿Cliente nuevo? Tu primer pedido tiene 40% de descuento. ¿Ya probaste Valka? Suscríbete y "
+            "ahorra 10% en tus entregas recurrentes."
         )
         return "\n".join(lines)
 
@@ -234,10 +256,23 @@ def format_feeding_plan_message(target_product: str, result: dict, language: str
         f"- Suggested package combo: {combo}",
     ]
     if result["monthly_cost_estimate"] is not None:
-        lines.append(f"- Estimated monthly cost: ${result['monthly_cost_estimate']:.2f}")
+        lines.append(f"- Estimated monthly cost (regular price): ${result['monthly_cost_estimate']:.2f}")
+        lines.append(f"- Estimated standard shipping: {_format_shipping_en(result['shipping_cost_estimate'])}")
     else:
         lines.append("- Estimated monthly cost: not available for this product yet.")
     lines.append(f"- Suggested delivery frequency: every {result['delivery_frequency_weeks']} weeks")
     lines.append("")
-    lines.append("You can adjust your Valka percentage (25/50/75/100%) anytime -- start your way.")
+    lines.append(
+        "You can adjust your Valka percentage (25/50/75/100%) anytime -- start your way. New "
+        "customer? Get 40% off your first order. Already tried Valka? Subscribe & save 10% on "
+        "recurring deliveries."
+    )
     return "\n".join(lines)
+
+
+def _format_shipping_en(shipping_cost: float) -> str:
+    return "Free (order qualifies for free standard shipping)" if shipping_cost == 0 else f"${shipping_cost:.2f}"
+
+
+def _format_shipping_es(shipping_cost: float) -> str:
+    return "Gratis (el pedido califica para envío estándar gratuito)" if shipping_cost == 0 else f"${shipping_cost:.2f}"
