@@ -31,6 +31,11 @@ class FeedingPlanData(TypedDict, total=False):
 class RecommendationData(TypedDict, total=False):
     avoid_ingredient: str
     priority: Literal["budget", "sensitive_stomach", "no_preference"]
+    # Optional, opportunistic -- not required to complete the flow (most
+    # dogs are adults and won't mention it), but captured whenever
+    # volunteered so recommend_product can flag a life-stage mismatch
+    # (e.g. today's KB is adult-only) instead of silently ignoring it.
+    life_stage: Literal["puppy", "adult", "senior", "pregnant_lactating"]
 
 
 class AgentState(TypedDict):

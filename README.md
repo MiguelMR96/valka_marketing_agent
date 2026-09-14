@@ -45,7 +45,7 @@ individual steps.
 
 `scripts/smoke.py` forces `MOCK_LLM=1` unless you already set it, so it
 always runs offline by default. Run `MOCK_LLM=0 ./scripts/demo.sh` to hit
-real Gemini/Groq instead.
+real Groq/Gemini instead.
 
 Missing API keys with `MOCK_LLM` unset fail immediately at startup with a
 clear error — never mid-conversation.
@@ -56,7 +56,7 @@ clear error — never mid-conversation.
       `product_question`, `gather_feeding_plan_info`,
       `gather_recommendation_info`, `order_status`, `escalate`,
       `smalltalk`), feeding-plan calculator (unit-tested), SQLite
-      checkpointer, LLM wrapper (Gemini → Groq → mock),
+      checkpointer, LLM wrapper (Groq → Gemini → mock),
       `scripts/smoke.py` covering six demo conversations (incl. one in
       Spanish)
 - [x] Post-demo addition: `product_recommendation` intent + a 7th node,
@@ -73,9 +73,18 @@ clear error — never mid-conversation.
 - [x] 2026-09-13 rebuild: bilingual (English/Spanish) prompts, templates,
       and field extraction throughout; feeding calculator rebuilt around
       the brief's sustained 25/50/75/100% Valka/kibble blend model instead
-      of a one-time transition-to-100% schedule; LLM provider order flipped
-      to Gemini-primary/Groq-fallback (more generous free-tier limits
-      currently).
+      of a one-time transition-to-100% schedule.
+- [x] 2026-09-14 live-test fixes: migrated off the fully-deprecated
+      `google-generativeai` SDK/retired `gemini-1.5-flash` to `google-genai`/
+      `gemini-3.6-flash`; added embeddings-based KB search (RAG) with
+      keyword-overlap as the offline/failure fallback; `_chat()` now treats
+      an empty completion as a failure (was silently returned as-is,
+      skipping every fallback); LLM provider order flipped **back** to
+      Groq-primary/Gemini-fallback after live testing showed
+      `gemini-3.6-flash`'s free tier is only 20 requests/day against
+      Groq's ~1000/day (confirmed via Groq's live rate-limit headers and a
+      web search, not just assumed -- see llm.py's module docstring for
+      the full back-and-forth on this).
 - [ ] Phase 4: voice, behind `VITE_ENABLE_VOICE` flag
 - [ ] Not yet started (later brief phases): multi-dog profiles/persistence,
       reminders/subscriptions, breeder/professional panel, real (non-
@@ -90,14 +99,14 @@ uv run uvicorn valka_agent.api.main:app --port 8000   # backend
 cd frontend && npm install && npm run dev              # frontend, :5173
 ```
 
-Needs `GEMINI_API_KEY` (or `GROQ_API_KEY`) in `.env`, or `MOCK_LLM=1`, same
-startup check as the smoke script. Gemini is tried first, Groq is the
-fallback (flipped during the 2026-09-13 rebuild — Gemini's free-tier limits
-are currently more generous on this account). **Note:** the build spec's
-original model choice, `llama-3.3-70b-versatile`, is no longer available on
-Groq's free tier (confirmed against the live API on 2026-09-08) — the Groq
-fallback now uses `openai/gpt-oss-20b`. See the comment in `llm.py` for why
-20b over 120b.
+Needs `GROQ_API_KEY` (or `GEMINI_API_KEY`) in `.env`, or `MOCK_LLM=1`, same
+startup check as the smoke script. Groq is tried first (1000 requests/day
+free tier, confirmed live), Gemini is the fallback (`gemini-3.6-flash`'s
+free tier is only 20 requests/day -- see llm.py's module docstring for how
+this order got flipped twice). **Note:** the build spec's original model
+choice, `llama-3.3-70b-versatile`, is no longer available on Groq's free
+tier (confirmed against the live API on 2026-09-08) — Groq now uses
+`openai/gpt-oss-20b`. See the comment in `llm.py` for why 20b over 120b.
 
 ## Deploying (Render, free tier)
 

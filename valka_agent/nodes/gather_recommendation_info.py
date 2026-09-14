@@ -15,7 +15,12 @@ from langchain_core.messages import AIMessage
 
 from valka_agent import llm
 from valka_agent.kb import get_kb
-from valka_agent.nodes._helpers import last_human_text, missing_recommendation_fields, resolve_language
+from valka_agent.nodes._helpers import (
+    extract_life_stage,
+    last_human_text,
+    missing_recommendation_fields,
+    resolve_language,
+)
 
 _NO_AVOID_KEYWORDS = (
     "none", "no allerg", "no restrictions", "no issues", "nothing", "not that i know",
@@ -39,6 +44,13 @@ _SENSITIVE_KEYWORDS = (
 _NO_PREFERENCE_KEYWORDS = (
     "no preference", "doesn't matter", "either", "whatever", "don't care", "not sure", "no particular",
     "sin preferencia", "no importa", "cualquiera", "no estoy seguro", "no estoy segura", "me da igual",
+    # "preferencia en particular" alone (without requiring "sin" first) --
+    # this is literally the phrase _QUESTION uses ("...o no tienes una
+    # preferencia en particular?"), and a real user echoed it back negated
+    # ("no tengo una preferencia en particular") in a way the narrower
+    # "sin preferencia" match missed entirely, so the flow just repeated
+    # the same question instead of progressing.
+    "preferencia en particular",
 )
 
 
@@ -79,10 +91,20 @@ def _extract_fields(text: str, still_missing: list[str]) -> dict:
         priority = _extract_priority(text)
         if priority:
             extracted["priority"] = priority
+
+    # Optional, opportunistic: not in REQUIRED_RECOMMENDATION_FIELDS (most
+    # dogs are adults and won't mention it, so it never blocks completion),
+    # but captured whenever volunteered so recommend_product can flag a
+    # mismatch -- today's KB is adult-only, so a puppy/senior/pregnant
+    # mention matters even though the two required fields don't cover it.
+    life_stage = extract_life_stage(text)
+    if life_stage:
+        extracted["life_stage"] = life_stage
+
     return extracted
 
 
-_QUESTION = {
+_QUESTION_BOTH = {
     "en": (
         "Happy to help you pick! Does your dog need to avoid any particular "
         "protein (chicken, beef, turkey, salmon — or none), and does budget or "
@@ -95,6 +117,23 @@ _QUESTION = {
         "sensible (o no tienes una preferencia en particular)?"
     ),
 }
+_QUESTION_AVOID_ONLY = {
+    "en": "Got it. Does your dog need to avoid any particular protein (chicken, beef, turkey, salmon — or none)?",
+    "es": "Entendido. ¿Tu perro necesita evitar alguna proteína en particular (pollo, res, pavo, salmón — o ninguna)?",
+}
+_QUESTION_PRIORITY_ONLY = {
+    "en": "Got it. Does budget or a gentler/sensitive-stomach formula matter more to you (or no particular preference)?",
+    "es": "Entendido. ¿Te importa más el presupuesto o una fórmula más suave para estómago sensible (o no tienes una preferencia en particular)?",
+}
+
+
+def _next_question(missing: list[str], language: str) -> str:
+    missing_set = set(missing)
+    if "avoid_ingredient" in missing_set and "priority" in missing_set:
+        return _QUESTION_BOTH[language]
+    if "avoid_ingredient" in missing_set:
+        return _QUESTION_AVOID_ONLY[language]
+    return _QUESTION_PRIORITY_ONLY[language]
 
 
 def gather_recommendation_info(state: dict) -> dict:
@@ -111,7 +150,7 @@ def gather_recommendation_info(state: dict) -> dict:
         return {
             "recommendation_data": extracted,
             "language": language,
-            "messages": [AIMessage(content=_QUESTION[language])],
+            "messages": [AIMessage(content=_next_question(now_missing, language))],
         }
 
     docs = get_kb().all_docs()

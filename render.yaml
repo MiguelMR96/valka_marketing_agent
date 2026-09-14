@@ -28,14 +28,16 @@ services:
     # needing uv to exist at start time at all.
     startCommand: ".venv/bin/uvicorn valka_agent.api.main:app --host 0.0.0.0 --port $PORT"
     envVars:
-      # Gemini is tried first (llm.py, flipped 2026-09-13 -- more generous
-      # free-tier limits than Groq on this account), Groq is the fallback.
-      # At least one of the two is required by config.check_startup_config;
-      # set GEMINI_API_KEY in the Render dashboard after blueprint creation
-      # to get real (non-mock) responses.
-      - key: GEMINI_API_KEY
-        sync: false
+      # Groq is tried first (llm.py -- confirmed live 2026-09-14 at 1000
+      # requests/day free, vs. Gemini's gemini-3.6-flash at only 20/day),
+      # Gemini is the fallback. At least one of the two is required by
+      # config.check_startup_config; set GROQ_API_KEY in the Render
+      # dashboard after blueprint creation to get real (non-mock)
+      # responses -- GEMINI_API_KEY is also worth setting so the KB's
+      # embeddings-based search (RAG) works too (Gemini-only, see kb.py).
       - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
         sync: false
       - key: MOCK_LLM
         value: "0"

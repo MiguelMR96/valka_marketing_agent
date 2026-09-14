@@ -91,3 +91,32 @@ def resolve_language(state: dict, text: str) -> str:
     fall back to whatever language was already established this thread,
     defaulting to English only if neither has ever been determined."""
     return detect_language(text) or state.get("language") or "en"
+
+
+# Shared between gather_feeding_plan_info (a required field) and
+# gather_recommendation_info (an optional, opportunistic one) -- both need
+# to recognize the same life-stage phrasing, so it lives here once instead
+# of drifting apart as two copies.
+_PUPPY_KEYWORDS = (
+    "puppy", "puppies", "baby dog", "cachorro", "cachorra", "cachorros",
+    "cachorras", "perro bebé", "perro bebe", "perra bebé", "perra bebe",
+)
+_SENIOR_KEYWORDS = ("senior", "older dog", "old dog", "mayor", "viejo", "vieja", "anciano", "anciana")
+_PREGNANT_KEYWORDS = (
+    "pregnant", "nursing", "lactating", "embarazada", "preñada", "prenada",
+    "lactando", "gestante", "en gestación", "en gestacion",
+)
+_ADULT_KEYWORDS = ("adult", "adulto", "adulta")
+
+
+def extract_life_stage(text: str) -> str | None:
+    t = text.lower()
+    if any(k in t for k in _PREGNANT_KEYWORDS):
+        return "pregnant_lactating"
+    if any(k in t for k in _PUPPY_KEYWORDS):
+        return "puppy"
+    if any(k in t for k in _SENIOR_KEYWORDS):
+        return "senior"
+    if any(k in t for k in _ADULT_KEYWORDS):
+        return "adult"
+    return None

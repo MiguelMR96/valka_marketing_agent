@@ -19,7 +19,12 @@ from langchain_core.messages import AIMessage
 
 from valka_agent.calculator import calculate_feeding_plan, format_feeding_plan_message
 from valka_agent.kb import get_kb
-from valka_agent.nodes._helpers import last_human_text, missing_feeding_plan_fields, resolve_language
+from valka_agent.nodes._helpers import (
+    extract_life_stage,
+    last_human_text,
+    missing_feeding_plan_fields,
+    resolve_language,
+)
 
 _WEIGHT_LB_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:lbs?\.?|pounds?|libras?)", re.IGNORECASE)
 _WEIGHT_KG_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:kgs?\.?|kilos?|kilogramos?)", re.IGNORECASE)
@@ -30,14 +35,6 @@ _SINGULAR_DOG_RE = re.compile(r"\b(?:dog|perro|perra)\b", re.IGNORECASE)
 _PLURAL_DOG_RE = re.compile(r"\b(?:dogs|perros|perras)\b", re.IGNORECASE)
 
 _BUDGET_RE = re.compile(r"\$\s?(\d+(?:\.\d+)?)")
-
-_PUPPY_KEYWORDS = ("puppy", "puppies", "cachorro", "cachorra", "cachorros", "cachorras")
-_SENIOR_KEYWORDS = ("senior", "older dog", "old dog", "mayor", "viejo", "vieja", "anciano", "anciana")
-_PREGNANT_KEYWORDS = (
-    "pregnant", "nursing", "lactating", "embarazada", "preñada", "prenada",
-    "lactando", "gestante", "en gestación", "en gestacion",
-)
-_ADULT_KEYWORDS = ("adult", "adulto", "adulta")
 
 _LOW_ACTIVITY_KEYWORDS = ("sedentary", "not very active", "low activity", "low energy", "sedentario", "poco activo", "poca actividad")
 _HIGH_ACTIVITY_KEYWORDS = ("very active", "high energy", "highly active", "corre mucho", "muy activo", "muy activa", "mucha energía", "mucha energia")
@@ -72,19 +69,6 @@ def _extract_num_dogs(text: str) -> int | None:
         return int(m.group(1))
     if _SINGULAR_DOG_RE.search(text) and not _PLURAL_DOG_RE.search(text):
         return 1
-    return None
-
-
-def _extract_life_stage(text: str) -> str | None:
-    t = text.lower()
-    if any(k in t for k in _PREGNANT_KEYWORDS):
-        return "pregnant_lactating"
-    if any(k in t for k in _PUPPY_KEYWORDS):
-        return "puppy"
-    if any(k in t for k in _SENIOR_KEYWORDS):
-        return "senior"
-    if any(k in t for k in _ADULT_KEYWORDS):
-        return "adult"
     return None
 
 
@@ -140,7 +124,7 @@ def _extract_fields(text: str, still_missing: list[str]) -> dict:
             extracted["num_dogs"] = num_dogs
 
     if "life_stage" in still_missing:
-        life_stage = _extract_life_stage(text)
+        life_stage = extract_life_stage(text)
         if life_stage:
             extracted["life_stage"] = life_stage
 

@@ -1,14 +1,20 @@
 # V1 DEMO IMPLEMENTATION — built for a deadline, not yet understood by
 # Miguel. Do not extend without a rebuild pass. See build spec Definition
 # of Done.
-"""LLM wrapper: Gemini primary, Groq fallback, MOCK_LLM=1 third path with
+"""LLM wrapper: Groq primary, Gemini fallback, MOCK_LLM=1 third path with
 no network calls.
 
-Provider order (Gemini first) was flipped during the bilingual/%-blend
-rebuild pass: Gemini's free-tier limits are currently more generous than
-Groq's on this account, so it's the better default even though Groq is
-faster per-call. Groq (openai/gpt-oss-20b -- see prior git history for why
-this model over gpt-oss-120b/llama-3.3-70b) stays wired as the fallback.
+Provider order flipped twice now, so this is worth pinning down precisely
+rather than trusting the last assumption: briefly flipped to Gemini-first
+during the 2026-09-13 bilingual/%-blend rebuild on the belief that Gemini's
+free tier was more generous, then flipped BACK to Groq-first on 2026-09-14
+after live testing actually exhausted Gemini's quota mid-conversation and
+both a live rate-limit-header check against Groq's API and a web search
+confirmed the real numbers: Groq's openai/gpt-oss-20b gets 1000
+requests/day free, gemini-3.6-flash gets only 20/day. Groq is faster
+per-call too. Re-verify both before ever flipping this again -- don't
+trust either provider's "generous free tier" reputation without checking
+live numbers, the same lesson as the two retired-model surprises above.
 
 Only two things in this whole app actually need a real LLM call:
   1. classify_intent   — routing the conversation
@@ -75,10 +81,15 @@ _RECOMMEND_SYSTEM_PROMPT = """You are a helpful, bilingual (English/Spanish) ass
 Voice: cercana, práctica, responsable -- warm and plain-spoken, never technical jargon, never disparaging kibble.
 Recommend exactly ONE product from the catalog below that best fits the
 customer's stated constraints. Use ONLY facts present in the catalog --
-if nothing in it satisfies an avoid-ingredient constraint, say so plainly
-rather than recommending something unsafe. Briefly explain why in 2-4
-sentences, referencing the relevant fact (price, sensitivity guidance,
-ingredients) from the catalog."""
+if nothing in it satisfies a stated constraint (an avoid-ingredient need,
+OR a life_stage that doesn't match what the catalog says a product is
+for -- e.g. a puppy/pregnant dog and every product is labeled for adult
+dogs only), say so plainly rather than recommending something unsuitable
+or unsafe. If life_stage is a mismatch, say that clearly before anything
+else and suggest checking with the team, rather than burying it after a
+product pitch. Briefly explain why in 2-4 sentences, referencing the
+relevant fact (price, sensitivity guidance, ingredients, life stage)
+from the catalog."""
 
 
 def _mock_classify(text: str) -> str:
@@ -182,16 +193,29 @@ def recommend_product(criteria: dict, catalog_chunks: list[str], language: str =
 
 
 def _chat(system_prompt: str, user_prompt: str) -> str | None:
-    """Try Gemini, then Groq. Returns None if both fail (caller has a
-    deterministic fallback in that case — never raises mid-conversation)."""
-    if GEMINI_API_KEY:
-        try:
-            return _chat_gemini(system_prompt, user_prompt)
-        except Exception:
-            pass
+    """Try Groq, then Gemini. Returns None if both fail or both return an
+    empty/blank completion (caller has a deterministic fallback in that
+    case — never raises or returns blank mid-conversation).
+
+    Checking truthiness, not just catching exceptions, matters: a
+    safety-filtered or otherwise empty completion can return "" rather
+    than raising or returning None -- found live (2026-09-14) when a
+    recommend_product call about a puppy came back as a blank chat bubble.
+    An empty string used to be treated as a "successful" response and
+    returned as-is, skipping both the fallback provider and the caller's
+    own mock-style fallback."""
     if GROQ_API_KEY:
         try:
-            return _chat_groq(system_prompt, user_prompt)
+            result = _chat_groq(system_prompt, user_prompt)
+            if result:
+                return result
+        except Exception:
+            pass
+    if GEMINI_API_KEY:
+        try:
+            result = _chat_gemini(system_prompt, user_prompt)
+            if result:
+                return result
         except Exception:
             pass
     return None
