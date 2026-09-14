@@ -63,6 +63,8 @@ _SPANISH_MARKERS = {
     "cachorro", "cachorra", "embarazada", "lactando", "presupuesto",
     "producto", "recomienda", "recomiendas", "pedido", "envio", "envío",
     "entrega", "activo", "activa", "sobrepeso", "delgado", "delgada",
+    "hablas", "habla", "hablan", "español", "espanol", "idioma",
+    "ingles", "inglés",
 }
 _ENGLISH_MARKERS = {
     "the", "a", "an", "is", "are", "of", "in", "to", "and", "or", "my",
@@ -71,7 +73,8 @@ _ENGLISH_MARKERS = {
     "help", "because", "feed", "food", "breed", "weight", "pounds", "kilos",
     "years", "puppy", "pregnant", "nursing", "budget", "product",
     "recommend", "recommends", "order", "shipping", "delivery", "active",
-    "overweight", "underweight",
+    "overweight", "underweight", "do", "you", "speak", "spanish",
+    "english", "language",
 }
 
 

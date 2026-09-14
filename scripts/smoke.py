@@ -21,6 +21,7 @@ from langchain_core.messages import HumanMessage
 
 from valka_agent.config import check_startup_config
 from valka_agent.graph import build_graph, get_sqlite_checkpointer
+from valka_agent.kb import get_kb
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -159,7 +160,7 @@ def conversation_5_product_recommendation(graph):
           f"got recommendation_data={rd!r}")
     check("captured priority=budget", rd.get("priority") == "budget",
           f"got recommendation_data={rd!r}")
-    check("kb_citations covers the full catalog", len(r2["kb_citations"]) == 3,
+    check("kb_citations covers the full catalog", len(r2["kb_citations"]) == len(get_kb().all_docs()),
           f"got kb_citations={r2['kb_citations']!r}")
     # Not asserting on the recommendation's actual product pick here: under
     # MOCK_LLM that text is a blind truncated echo of the catalog (same
@@ -191,7 +192,7 @@ def conversation_6_spanish_bilingual(graph):
     r2 = send(graph, thread_id, "¿Qué productos tienen disponibles?")
     check("routed to product_question", r2["intent"] == "product_question",
           f"got intent={r2['intent']!r}")
-    check("Spanish browse-all query matched the full catalog", len(r2["kb_citations"]) == 3,
+    check("Spanish browse-all query matched the full catalog", len(r2["kb_citations"]) == len(get_kb().all_docs()),
           f"got kb_citations={r2['kb_citations']!r}")
 
 

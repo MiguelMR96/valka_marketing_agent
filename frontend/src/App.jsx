@@ -14,6 +14,28 @@ import { useEffect, useRef, useState } from "react";
 // the deployed backend's URL; falls back to localhost for local dev.
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
+// Render's free tier spins the backend down after ~15 min idle; the next
+// request wakes it but can take 30-60s, and the browser's EventSource
+// gives up long before that -- the user saw this as a scary
+// "[connection error — is the API running on :8000?]" message that also
+// leaked local-dev debugging text onto a deployed site. Instead of that,
+// poll /api/health until the backend responds (or this gives up) so a
+// cold start becomes a brief "waking up" message and an automatic retry,
+// not a dead end the user has to notice and manually resend past.
+async function waitForBackend(maxWaitMs = 55000, intervalMs = 3000) {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${API_BASE}/api/health`);
+      if (res.ok) return true;
+    } catch {
+      // still waking up / unreachable -- keep polling
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return false;
+}
+
 function getThreadId() {
   const key = "valka-thread-id";
   let id = localStorage.getItem(key);
@@ -55,10 +77,15 @@ export default function App() {
   function streamFrom(url, { onEscalated } = {}) {
     setStreaming(true);
     appendMessage({ role: "assistant", text: "" });
+    attemptStream(url, { onEscalated, isRetry: false });
+  }
 
+  function attemptStream(url, { onEscalated, isRetry }) {
     const es = new EventSource(url);
+    let gotChunk = false;
 
     es.addEventListener("chunk", (e) => {
+      gotChunk = true;
       const { text } = JSON.parse(e.data);
       appendToLastAssistant(text);
     });
@@ -84,8 +111,35 @@ export default function App() {
 
     es.onerror = () => {
       es.close();
+
+      if (!gotChunk && !isRetry) {
+        // No data ever arrived and this is the first attempt -- almost
+        // always a Render free-tier cold start, not a real failure. Wait
+        // for the backend to actually come up, then retry once instead of
+        // surfacing an error for what's usually just a wake-up delay.
+        appendToLastAssistant("Waking up the server, one moment…");
+        waitForBackend().then((ready) => {
+          setMessages((prev) => {
+            const next = [...prev];
+            next[next.length - 1] = { ...next[next.length - 1], text: "" };
+            return next;
+          });
+          if (ready) {
+            attemptStream(url, { onEscalated, isRetry: true });
+          } else {
+            setStreaming(false);
+            appendToLastAssistant(
+              "Sorry, I couldn't reach the server just now. Please try sending your message again in a moment."
+            );
+          }
+        });
+        return;
+      }
+
       setStreaming(false);
-      appendToLastAssistant("\n\n[connection error — is the API running on :8000?]");
+      appendToLastAssistant(
+        "\n\nSorry, something interrupted that response. Please try again."
+      );
     };
   }
 
