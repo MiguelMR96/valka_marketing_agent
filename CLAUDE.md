@@ -13,11 +13,10 @@ for the state of the knowledge base.
   otherwise for that specific change.
 - Only commit when the user actually asks for a commit — don't commit
   proactively mid-task.
-- **Commit messages narrate the "why," not just the "what."** Follow this
-  repo's existing style (see `git log`): if the commit is a bug fix,
-  explain the failure mode that was actually observed (a screenshot, a
-  live test, a specific broken conversation) and what caused it, not just
-  "fixed X." Multi-paragraph bodies are normal here.
+- **Commit messages are one line.** No multi-paragraph body, no bullet
+  list of what changed — a single concise line describing the change.
+- **No `Co-Authored-By: Claude` trailer.** Do not add it, even though
+  Claude Code's default attribution instructions say to.
 - Never commit internal/confidential strategy documents (brand briefs,
   pricing proposals, anything marked "CONFIDENTIAL" or "working
   proposal") — add them to `.gitignore` instead. Ask before committing
