@@ -2,7 +2,7 @@
 # Miguel. Do not extend without a rebuild pass. See build spec Definition
 # of Done.
 """Collects the two RecommendationData fields across turns, then hands off
-to llm.recommend_product for the actual pick. Mirrors gather_transition_info's
+to llm.recommend_product for the actual pick. Mirrors gather_feeding_plan_info's
 shape: deterministic keyword extraction for slots, loop back via graph.py's
 entry routing until both fields are known, then a final answer turn.
 
@@ -15,14 +15,31 @@ from langchain_core.messages import AIMessage
 
 from valka_agent import llm
 from valka_agent.kb import get_kb
-from valka_agent.nodes._helpers import last_human_text, missing_recommendation_fields
+from valka_agent.nodes._helpers import last_human_text, missing_recommendation_fields, resolve_language
 
-_NO_AVOID_KEYWORDS = ("none", "no allerg", "no restrictions", "no issues", "nothing", "not that i know")
-_PROTEIN_WORDS = ("chicken", "beef", "turkey", "salmon", "tripe")
+_NO_AVOID_KEYWORDS = (
+    "none", "no allerg", "no restrictions", "no issues", "nothing", "not that i know",
+    "ninguno", "ninguna", "no alerg", "sin restricciones", "sin problemas", "nada",
+)
+_PROTEIN_WORDS = (
+    "chicken", "beef", "turkey", "salmon", "tripe",
+    # "res" alone is too short/common a substring in Spanish (matches inside
+    # "interesante", "presupuesto", etc.) -- only match the fuller phrase.
+    "pollo", "carne de res", "pavo", "salmón", "tripa",
+)
 
-_BUDGET_KEYWORDS = ("budget", "cheap", "afford", "price", "cost", "inexpensive")
-_SENSITIVE_KEYWORDS = ("sensitive stomach", "gentle", "tummy", "upset stomach", "sensitive")
-_NO_PREFERENCE_KEYWORDS = ("no preference", "doesn't matter", "either", "whatever", "don't care", "not sure", "no particular")
+_BUDGET_KEYWORDS = (
+    "budget", "cheap", "afford", "price", "cost", "inexpensive",
+    "presupuesto", "barato", "económico", "economico", "precio", "costo",
+)
+_SENSITIVE_KEYWORDS = (
+    "sensitive stomach", "gentle", "tummy", "upset stomach", "sensitive",
+    "estómago sensible", "estomago sensible", "suave", "estómago delicado", "sensible",
+)
+_NO_PREFERENCE_KEYWORDS = (
+    "no preference", "doesn't matter", "either", "whatever", "don't care", "not sure", "no particular",
+    "sin preferencia", "no importa", "cualquiera", "no estoy seguro", "no estoy segura", "me da igual",
+)
 
 
 def _extract_avoid_ingredient(text: str) -> str | None:
@@ -65,17 +82,26 @@ def _extract_fields(text: str, still_missing: list[str]) -> dict:
     return extracted
 
 
-_QUESTION = (
-    "Happy to help you pick! Does your dog need to avoid any particular "
-    "protein (chicken, beef, turkey, salmon — or none), and does budget or "
-    "a gentler/sensitive-stomach formula matter more to you (or no particular preference)?"
-)
+_QUESTION = {
+    "en": (
+        "Happy to help you pick! Does your dog need to avoid any particular "
+        "protein (chicken, beef, turkey, salmon — or none), and does budget or "
+        "a gentler/sensitive-stomach formula matter more to you (or no particular preference)?"
+    ),
+    "es": (
+        "¡Con gusto te ayudo a elegir! ¿Tu perro necesita evitar alguna "
+        "proteína en particular (pollo, res, pavo, salmón — o ninguna), y te "
+        "importa más el presupuesto o una fórmula más suave para estómago "
+        "sensible (o no tienes una preferencia en particular)?"
+    ),
+}
 
 
 def gather_recommendation_info(state: dict) -> dict:
     recommendation_data = state.get("recommendation_data") or {}
-    still_missing = missing_recommendation_fields(recommendation_data)
     text = last_human_text(state["messages"])
+    language = resolve_language(state, text)
+    still_missing = missing_recommendation_fields(recommendation_data)
 
     extracted = _extract_fields(text, still_missing)
     merged = {**recommendation_data, **extracted}
@@ -84,13 +110,15 @@ def gather_recommendation_info(state: dict) -> dict:
     if now_missing:
         return {
             "recommendation_data": extracted,
-            "messages": [AIMessage(content=_QUESTION)],
+            "language": language,
+            "messages": [AIMessage(content=_QUESTION[language])],
         }
 
     docs = get_kb().all_docs()
-    answer = llm.recommend_product(merged, [doc.text for doc in docs])
+    answer = llm.recommend_product(merged, [doc.text for doc in docs], language=language)
     return {
         "recommendation_data": extracted,
+        "language": language,
         "kb_citations": [doc.source for doc in docs],
         "messages": [AIMessage(content=answer)],
     }

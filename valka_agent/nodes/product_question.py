@@ -5,27 +5,38 @@ from langchain_core.messages import AIMessage
 
 from valka_agent import llm
 from valka_agent.kb import get_kb
-from valka_agent.nodes._helpers import last_human_text
+from valka_agent.nodes._helpers import last_human_text, resolve_language
+
+_NO_INFO_MESSAGE = {
+    "en": (
+        "I don't have information about that in our product catalog "
+        "right now — I don't want to guess. Is there something else "
+        "I can help with, or a specific product name I can look up?"
+    ),
+    "es": (
+        "No tengo esa información en nuestro catálogo de productos por "
+        "ahora — prefiero no adivinar. ¿Hay algo más en lo que pueda "
+        "ayudarte, o el nombre de un producto específico que pueda buscar?"
+    ),
+}
 
 
 def product_question(state: dict) -> dict:
     query = last_human_text(state["messages"])
+    language = resolve_language(state, query)
     hits = get_kb().search(query)
 
     if not hits:
-        answer = (
-            "I don't have information about that in our product catalog "
-            "right now — I don't want to guess. Is there something else "
-            "I can help with, or a specific product name I can look up?"
-        )
         return {
-            "messages": [AIMessage(content=answer)],
+            "messages": [AIMessage(content=_NO_INFO_MESSAGE[language])],
+            "language": language,
             "kb_citations": [],
         }
 
-    answer = llm.answer_with_context(query, [doc.text for doc in hits])
+    answer = llm.answer_with_context(query, [doc.text for doc in hits], language=language)
     citations = [doc.source for doc in hits]
     return {
         "messages": [AIMessage(content=answer)],
+        "language": language,
         "kb_citations": citations,
     }

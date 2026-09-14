@@ -28,6 +28,13 @@ services:
     # needing uv to exist at start time at all.
     startCommand: ".venv/bin/uvicorn valka_agent.api.main:app --host 0.0.0.0 --port $PORT"
     envVars:
+      # Gemini is tried first (llm.py, flipped 2026-09-13 -- more generous
+      # free-tier limits than Groq on this account), Groq is the fallback.
+      # At least one of the two is required by config.check_startup_config;
+      # set GEMINI_API_KEY in the Render dashboard after blueprint creation
+      # to get real (non-mock) responses.
+      - key: GEMINI_API_KEY
+        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: MOCK_LLM

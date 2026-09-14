@@ -69,8 +69,9 @@ async def _stream_turn(invoke_fn) -> EventSourceResponse:
 
         yield {"event": "state", "data": json.dumps({
             "intent": result.get("intent"),
+            "language": result.get("language"),
             "kb_citations": result.get("kb_citations", []),
-            "transition_data": result.get("transition_data", {}),
+            "feeding_plan_data": result.get("feeding_plan_data", {}),
             "awaiting_human": result.get("awaiting_human", False),
         })}
         yield {"event": "done", "data": "{}"}

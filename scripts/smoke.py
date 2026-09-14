@@ -103,37 +103,43 @@ def conversation_1_product_question(graph):
           f"got kb_citations={result['kb_citations']!r}")
 
 
-def conversation_2_feeding_transition(graph):
-    print("\n=== Conversation 2: feeding transition (multi-turn) ===")
-    thread_id = "demo-2-feeding-transition"
+def conversation_2_feeding_plan(graph):
+    print("\n=== Conversation 2: feeding plan (multi-turn) ===")
+    thread_id = "demo-2-feeding-plan"
 
-    r1 = send(graph, thread_id, "I want to switch my dog to raw.")
-    check("routed to feeding_transition", r1["intent"] == "feeding_transition",
+    r1 = send(graph, thread_id, "I want to start feeding my dog raw.")
+    check("routed to feeding_plan", r1["intent"] == "feeding_plan",
           f"got intent={r1['intent']!r}")
-    check("asks for weight/current food", any(
-        kw in r1["messages"][-1].content.lower() for kw in ("weigh", "currently eating")
+    check("asks for weight/dogs/life stage", any(
+        kw in r1["messages"][-1].content.lower() for kw in ("weight", "life stage")
     ), r1["messages"][-1].content)
 
-    r2 = send(graph, thread_id, "She's 60 pounds, on kibble right now.")
-    check("captured weight_lbs=60.0", r2["transition_data"].get("weight_lbs") == 60.0,
-          f"got transition_data={r2['transition_data']!r}")
-    check("captured current_food=kibble", r2["transition_data"].get("current_food") == "kibble",
-          f"got transition_data={r2['transition_data']!r}")
-    check("asks for product/sensitivity next", any(
-        kw in r2["messages"][-1].content.lower() for kw in ("which product", "sensitivities")
+    r2 = send(graph, thread_id, "She's 60 pounds, just one dog, and she's an adult.")
+    fpd = r2["feeding_plan_data"]
+    check("captured weight_lbs=60.0", fpd.get("weight_lbs") == 60.0, f"got feeding_plan_data={fpd!r}")
+    check("captured num_dogs=1", fpd.get("num_dogs") == 1, f"got feeding_plan_data={fpd!r}")
+    check("captured life_stage=adult", fpd.get("life_stage") == "adult", f"got feeding_plan_data={fpd!r}")
+    check("asks for activity/body condition next", any(
+        kw in r2["messages"][-1].content.lower() for kw in ("active", "body condition")
     ), r2["messages"][-1].content)
 
-    r3 = send(graph, thread_id, "Beef & Tripe Blend, normal sensitivity.")
-    td = r3["transition_data"]
-    check("captured target_product", td.get("target_product") == "Beef & Tripe Blend",
-          f"got transition_data={td!r}")
-    check("captured sensitivity=normal", td.get("sensitivity") == "normal",
-          f"got transition_data={td!r}")
+    r3 = send(graph, thread_id, "Moderate activity, ideal weight.")
+    fpd = r3["feeding_plan_data"]
+    check("captured activity_level=moderate", fpd.get("activity_level") == "moderate", f"got feeding_plan_data={fpd!r}")
+    check("captured body_condition=ideal", fpd.get("body_condition") == "ideal", f"got feeding_plan_data={fpd!r}")
+    check("asks for product/percent next", any(
+        kw in r3["messages"][-1].content.lower() for kw in ("which product", "percentage")
+    ), r3["messages"][-1].content)
 
-    reply = r3["messages"][-1].content
-    check("schedule mentions Day 1 amount (0.375 lb)", "0.375" in reply, reply)
-    check("schedule mentions Day 7 steady state (1.5 lb)", reply.count("1.5") >= 2, reply)
-    check("schedule spans 7 days", "Day 7" in reply and "Day 8" not in reply, reply)
+    r4 = send(graph, thread_id, "Beef & Tripe Blend, 100%.")
+    fpd = r4["feeding_plan_data"]
+    check("captured target_product", fpd.get("target_product") == "Beef & Tripe Blend",
+          f"got feeding_plan_data={fpd!r}")
+    check("captured percent_valka=100", fpd.get("percent_valka") == 100, f"got feeding_plan_data={fpd!r}")
+
+    reply = r4["messages"][-1].content
+    check("plan mentions daily total (1.5 lb)", "1.5" in reply, reply)
+    check("plan mentions a cost estimate", "cost" in reply.lower(), reply)
 
 
 def conversation_5_product_recommendation(graph):
@@ -171,6 +177,22 @@ def conversation_3_order_status(graph):
           f"got intent={result['intent']!r}")
     check("response is short", len(result["messages"][-1].content) < 400,
           "response too long for a smalltalk/order-status turn")
+
+
+def conversation_6_spanish_bilingual(graph):
+    print("\n=== Conversation 6: Spanish-language smalltalk + catalog browse ===")
+    thread_id = "demo-6-espanol"
+
+    r1 = send(graph, thread_id, "Hola, buenos días")
+    check("routed to smalltalk", r1["intent"] == "smalltalk", f"got intent={r1['intent']!r}")
+    check("detected language=es", r1.get("language") == "es", f"got language={r1.get('language')!r}")
+    check("replied in Spanish", "Hola" in r1["messages"][-1].content, r1["messages"][-1].content)
+
+    r2 = send(graph, thread_id, "¿Qué productos tienen disponibles?")
+    check("routed to product_question", r2["intent"] == "product_question",
+          f"got intent={r2['intent']!r}")
+    check("Spanish browse-all query matched the full catalog", len(r2["kb_citations"]) == 3,
+          f"got kb_citations={r2['kb_citations']!r}")
 
 
 def conversation_4_escalate_interrupt_resume():
@@ -212,8 +234,8 @@ def main():
     # and DB_PATH is a persistent file (that's the point, for the live demo).
     # Reusing it here would mean each smoke.py run starts from whatever state
     # the *previous* run left those threads in instead of a clean slate --
-    # e.g. a rerun would find demo-2's transition_data already fully
-    # populated and skip straight to the schedule on turn 1, then misroute
+    # e.g. a rerun would find demo-2's feeding_plan_data already fully
+    # populated and skip straight to the plan on turn 1, then misroute
     # turns 2-3 as smalltalk/product_question. Bit for bit the same bug
     # conversation_4 below tests *for* (state must survive a real restart)
     # is exactly what breaks a hardcoded thread_id smoke test that ISN'T
@@ -228,10 +250,11 @@ def main():
         graph = build_graph(checkpointer=checkpointer)
 
         conversation_1_product_question(graph)
-        conversation_2_feeding_transition(graph)
+        conversation_2_feeding_plan(graph)
         conversation_3_order_status(graph)
         conversation_4_escalate_interrupt_resume()
         conversation_5_product_recommendation(graph)
+        conversation_6_spanish_bilingual(graph)
     finally:
         if os.path.exists(db_path):
             os.remove(db_path)

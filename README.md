@@ -1,9 +1,15 @@
 # Valka Agent — v1 demo
 
 > **V1 DEMO IMPLEMENTATION** — built for a deadline (2026-09-07 night, demo
-> 2026-09-08 morning), not yet understood by Miguel. See the build spec
-> Definition of Done. `graph.py`/`nodes/`/interrupt logic get rebuilt by hand
-> by Sunday 2026-09-13 — this is a working reference, not the final code.
+> 2026-09-08 morning). On 2026-09-13, `state.py`/`calculator.py`/`graph.py`/
+> `nodes/` were rebuilt by hand against `Brief_Estrategico_Valka_IA-1.pdf`
+> (the real Valka brand/product brief): the feeding model changed from a
+> one-time transition-to-100% schedule to the brief's actual sustained
+> 25/50/75/100% blend model, and the whole conversational layer (prompts,
+> templates, field extraction) became bilingual (English/Spanish). Nutrition
+> percentages are still **sourced placeholders** (see `calculator.py`'s
+> docstring for citations), not approved Valka/vet numbers — pending
+> verification and family/vet sign-off before production use.
 
 ## ⚠️ Placeholder knowledge base
 
@@ -39,21 +45,23 @@ individual steps.
 
 `scripts/smoke.py` forces `MOCK_LLM=1` unless you already set it, so it
 always runs offline by default. Run `MOCK_LLM=0 ./scripts/demo.sh` to hit
-real Groq/Gemini instead.
+real Gemini/Groq instead.
 
 Missing API keys with `MOCK_LLM` unset fail immediately at startup with a
 clear error — never mid-conversation.
 
 ## Status (Phase 3 of 4 complete)
 
-- [x] `state.py`, `graph.py`, six nodes, feeding calculator (unit-tested),
-      SQLite checkpointer, LLM wrapper (Groq → Gemini → mock),
-      `scripts/smoke.py` covering the three demo conversations
+- [x] `state.py`, `graph.py`, seven nodes (`classify_intent`,
+      `product_question`, `gather_feeding_plan_info`,
+      `gather_recommendation_info`, `order_status`, `escalate`,
+      `smalltalk`), feeding-plan calculator (unit-tested), SQLite
+      checkpointer, LLM wrapper (Gemini → Groq → mock),
+      `scripts/smoke.py` covering six demo conversations (incl. one in
+      Spanish)
 - [x] Post-demo addition: `product_recommendation` intent + a 7th node,
-      `gather_recommendation_info`, mirroring `gather_transition_info`'s
-      loop-back shape. Added state.py fields (`recommendation_data`), which
-      the original spec marked hands-off for this pass -- flagging that
-      explicitly since it's the one file meant to stay verbatim.
+      `gather_recommendation_info`, mirroring `gather_feeding_plan_info`'s
+      loop-back shape. Added state.py fields (`recommendation_data`).
 - [x] Phase 2: `interrupt()` on the escalate path + resume across restarts —
       `scripts/smoke.py`'s 4th conversation proves this across a real OS
       process boundary (two separate `python -c` subprocesses sharing only
@@ -62,7 +70,16 @@ clear error — never mid-conversation.
       frontend (`frontend/`, text chat only). Escalation surfaces as a
       real human-in-the-loop control: a banner + reply box that calls
       `/api/resume`, not just a passive indicator.
+- [x] 2026-09-13 rebuild: bilingual (English/Spanish) prompts, templates,
+      and field extraction throughout; feeding calculator rebuilt around
+      the brief's sustained 25/50/75/100% Valka/kibble blend model instead
+      of a one-time transition-to-100% schedule; LLM provider order flipped
+      to Gemini-primary/Groq-fallback (more generous free-tier limits
+      currently).
 - [ ] Phase 4: voice, behind `VITE_ENABLE_VOICE` flag
+- [ ] Not yet started (later brief phases): multi-dog profiles/persistence,
+      reminders/subscriptions, breeder/professional panel, real (non-
+      placeholder) nutrition/pricing/KB content
 
 ### Running the live demo (not just the smoke script)
 
@@ -73,11 +90,14 @@ uv run uvicorn valka_agent.api.main:app --port 8000   # backend
 cd frontend && npm install && npm run dev              # frontend, :5173
 ```
 
-Needs `GROQ_API_KEY` (or `GEMINI_API_KEY`) in `.env`, or `MOCK_LLM=1`, same
-startup check as the smoke script. **Note:** the build spec's original
-model choice, `llama-3.3-70b-versatile`, is no longer available on Groq's
-free tier (confirmed against the live API on 2026-09-08) — this now uses
-`openai/gpt-oss-20b`. See the comment in `llm.py` for why 20b over 120b.
+Needs `GEMINI_API_KEY` (or `GROQ_API_KEY`) in `.env`, or `MOCK_LLM=1`, same
+startup check as the smoke script. Gemini is tried first, Groq is the
+fallback (flipped during the 2026-09-13 rebuild — Gemini's free-tier limits
+are currently more generous on this account). **Note:** the build spec's
+original model choice, `llama-3.3-70b-versatile`, is no longer available on
+Groq's free tier (confirmed against the live API on 2026-09-08) — the Groq
+fallback now uses `openai/gpt-oss-20b`. See the comment in `llm.py` for why
+20b over 120b.
 
 ## Deploying (Render, free tier)
 
@@ -104,31 +124,46 @@ the frontend service) to match, then trigger a manual redeploy of each.
   wake it back up.
 - The backend's disk is ephemeral — `checkpoints.sqlite` resets on every
   sleep/wake or redeploy, so conversation history (including any
-  in-progress feeding-transition/recommendation flow, or an escalated
+  in-progress feeding-plan/recommendation flow, or an escalated
   thread waiting to be resumed) does not survive that. Fine for someone
   trying the demo fresh; not a real memory store.
 
 ## Design notes for the rebuild pass
 
 - **Seven nodes** (six original + `gather_recommendation_info`) = one per
-  intent (`product_question`, `gather_transition_info`,
+  intent (`product_question`, `gather_feeding_plan_info`,
   `gather_recommendation_info`, `order_status`, `escalate`, `smalltalk`) +
-  `classify_intent`. The original six were inferred from the addendum's
-  demo script and `state.py`'s intent enum, since the original build spec's
-  node table wasn't available at build time — verify against the real spec
-  before treating this as gospel.
-- **The gather_transition_info "loop-back"** is realized at the graph's
-  *entry point*, not as a same-turn self-edge: `_route_from_entry` in
-  `graph.py` checks whether the previous turn's `intent` was
-  `feeding_transition` and fields are still missing, and if so routes
-  straight back into `gather_transition_info` next turn, skipping
-  re-classification. A same-turn self-loop isn't meaningful here since one
-  `graph.invoke()` only ever sees one new human message.
-- **Only two nodes call an LLM**: `classify_intent` and `product_question`.
-  `order_status`, `smalltalk`, and the feeding schedule itself are fully
+  `classify_intent`.
+- **The `gather_feeding_plan_info`/`gather_recommendation_info` "loop-back"**
+  is realized at the graph's *entry point*, not as a same-turn self-edge:
+  `_route_from_entry` in `graph.py` checks whether the previous turn's
+  `intent` was still mid-collection (fields missing) AND the new message
+  actually extracted something toward a missing field, and if so routes
+  straight back into the gather node next turn, skipping re-classification.
+  If the new message doesn't look like an answer (a topic change, an
+  unrelated question), it falls through to `classify_intent` instead — see
+  the comment in `_route_from_entry` for the bug this specifically fixes
+  (a gather flow that couldn't be escaped once started).
+- **The feeding-plan model is a sustained blend ratio**, not a one-time
+  transition: the customer picks and stays at 25/50/75/100% Valka mixed
+  with kibble (per `Brief_Estrategico_Valka_IA-1.pdf`'s "Modelo flexible de
+  incorporación"). See `calculator.py`'s docstring for the full model and
+  for citations behind the placeholder nutrition percentages — these are
+  NOT approved Valka/vet numbers yet.
+- **Bilingual (English/Spanish) throughout**: `nodes/_helpers.py`'s
+  `detect_language`/`resolve_language` pick and stick to a language per
+  thread using a deterministic keyword heuristic (works under `MOCK_LLM=1`
+  too); every templated node response has EN/ES variants, and the two
+  LLM-backed nodes pass an explicit language instruction to the model
+  rather than letting it guess. The KB docs themselves (`data/kb/*.md`) are
+  still English-only placeholder content — `kb.py`'s synonym map and
+  browse-all pattern bridge common Spanish queries onto them in the
+  meantime, but real bilingual KB content is still pending.
+- **Only two nodes call an LLM**: `classify_intent` and
+  `product_question`/`gather_recommendation_info`. `order_status`,
+  `smalltalk`, and the feeding-plan calculation itself are fully
   templated/deterministic — kept that way on purpose to shrink the demo's
-  network dependency surface. Revisit this if the real spec calls for LLM
-  involvement elsewhere.
+  network dependency surface.
 - **The API's chat/resume endpoints are GET, not POST**, so the frontend
   can use the browser's native `EventSource` for SSE instead of hand-rolling
   a parser over `fetch()`'s streaming body — `EventSource` can't carry a
@@ -144,13 +179,16 @@ the frontend service) to match, then trigger a manual redeploy of each.
   hardcoded `thread_id`s, and the checkpointer persists state across process
   runs by design (that's the whole point of Phase 2); pointing the smoke
   script at the same file the live demo/API would use meant a second run
-  picked up a previous run's finished `transition_data` and misrouted
+  picked up a previous run's finished `feeding_plan_data` and misrouted
   turns 2-3. Conversation 4 (escalate/interrupt) gets its own separate
   throwaway db per invocation for the same reason.
-- **Field extraction in `gather_transition_info`** is regex/keyword-based,
+- **Field extraction in `gather_feeding_plan_info`** is regex/keyword-based,
   not LLM-based — slot values feed real arithmetic, so predictability beat
-  flexibility for tonight. It gates product/sensitivity extraction on
-  weight_lbs and current_food already being known, otherwise an opening
-  message like "I want to switch my dog to raw" gets misread as a product
-  name (this was a real bug caught during the Phase 1 smoke run — see git
-  history).
+  flexibility. It gates product/percent extraction on the first five fields
+  (weight, dog count, life stage, activity, body condition) already being
+  known, otherwise an opening message like "I want to start feeding my dog
+  raw" gets misread as a product name or blend percentage (this class of
+  bug was caught during the original build's smoke run — see git history).
+  A `life_stage` of `pregnant_lactating` short-circuits to a safe
+  human/vet-referral message instead of computing anything — the brief is
+  explicit that this needs pre-approved rules the app doesn't have.

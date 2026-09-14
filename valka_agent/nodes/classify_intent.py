@@ -2,7 +2,7 @@
 # Miguel. Do not extend without a rebuild pass. See build spec Definition
 # of Done.
 from valka_agent import llm
-from valka_agent.nodes._helpers import last_human_text, recent_history_text
+from valka_agent.nodes._helpers import last_human_text, recent_history_text, resolve_language
 
 
 def classify_intent(state: dict) -> dict:
@@ -25,6 +25,7 @@ def classify_intent(state: dict) -> dict:
     text = last_human_text(state["messages"])
     history = recent_history_text(state["messages"])
     intent = llm.classify_intent(text, history=history)
+    language = resolve_language(state, text)
 
     if intent == "escalate":
         # Set these here, before the escalate node's interrupt() pauses the
@@ -32,8 +33,9 @@ def classify_intent(state: dict) -> dict:
         # inferable from LangGraph's internal interrupt bookkeeping).
         return {
             "intent": intent,
+            "language": language,
             "awaiting_human": True,
             "escalation_reason": f"Escalation triggered by: {text[:200]}",
         }
 
-    return {"intent": intent, "awaiting_human": False, "escalation_reason": None}
+    return {"intent": intent, "language": language, "awaiting_human": False, "escalation_reason": None}

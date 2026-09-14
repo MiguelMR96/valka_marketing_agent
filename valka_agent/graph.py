@@ -3,13 +3,16 @@
 # of Done.
 """Builds the Valka Agent graph.
 
-Seven nodes: classify_intent, product_question, gather_transition_info,
+Seven nodes: classify_intent, product_question, gather_feeding_plan_info,
 gather_recommendation_info, order_status, escalate, smalltalk — one per
 intent, plus the classifier. (gather_recommendation_info was added after
-the original six-node build; same loop-back shape as gather_transition_info,
-see nodes/gather_recommendation_info.py.)
+the original six-node build; same loop-back shape as
+gather_feeding_plan_info, see nodes/gather_recommendation_info.py.
+gather_feeding_plan_info itself was rebuilt from the original
+gather_transition_info around the brief's %-blend model — see
+calculator.py's docstring.)
 
-The "loop-back" on gather_transition_info/gather_recommendation_info is
+The "loop-back" on gather_feeding_plan_info/gather_recommendation_info is
 realized at the graph's entry point, not as a same-turn self-edge: a single
 graph.invoke() only ever sees one new human message, so a same-turn
 self-loop on that node would just re-run on identical input. Instead, the
@@ -25,10 +28,10 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 from valka_agent.state import AgentState
 from valka_agent.config import DB_PATH
-from valka_agent.nodes._helpers import missing_transition_fields, missing_recommendation_fields, last_human_text
+from valka_agent.nodes._helpers import missing_feeding_plan_fields, missing_recommendation_fields, last_human_text
 from valka_agent.nodes.classify_intent import classify_intent
 from valka_agent.nodes.product_question import product_question
-from valka_agent.nodes.gather_transition_info import gather_transition_info, _extract_fields as _extract_transition_fields
+from valka_agent.nodes.gather_feeding_plan_info import gather_feeding_plan_info, _extract_fields as _extract_feeding_plan_fields
 from valka_agent.nodes.gather_recommendation_info import gather_recommendation_info, _extract_fields as _extract_recommendation_fields
 from valka_agent.nodes.order_status import order_status
 from valka_agent.nodes.escalate import escalate
@@ -36,7 +39,7 @@ from valka_agent.nodes.smalltalk import smalltalk
 
 _INTENT_TO_NODE = {
     "product_question": "product_question",
-    "feeding_transition": "gather_transition_info",
+    "feeding_plan": "gather_feeding_plan_info",
     "product_recommendation": "gather_recommendation_info",
     "order_status": "order_status",
     "escalate": "escalate",
@@ -45,7 +48,7 @@ _INTENT_TO_NODE = {
 
 # (persisted intent value, state field, missing-fields check, extractor, node to loop back to)
 _LOOP_BACK_ROUTES = (
-    ("feeding_transition", "transition_data", missing_transition_fields, _extract_transition_fields, "gather_transition_info"),
+    ("feeding_plan", "feeding_plan_data", missing_feeding_plan_fields, _extract_feeding_plan_fields, "gather_feeding_plan_info"),
     ("product_recommendation", "recommendation_data", missing_recommendation_fields, _extract_recommendation_fields, "gather_recommendation_info"),
 )
 
@@ -86,7 +89,7 @@ def build_graph(checkpointer=None):
 
     builder.add_node("classify_intent", classify_intent)
     builder.add_node("product_question", product_question)
-    builder.add_node("gather_transition_info", gather_transition_info)
+    builder.add_node("gather_feeding_plan_info", gather_feeding_plan_info)
     builder.add_node("gather_recommendation_info", gather_recommendation_info)
     builder.add_node("order_status", order_status)
     builder.add_node("escalate", escalate)
@@ -94,20 +97,20 @@ def build_graph(checkpointer=None):
 
     builder.add_conditional_edges(START, _route_from_entry, {
         "classify_intent": "classify_intent",
-        "gather_transition_info": "gather_transition_info",
+        "gather_feeding_plan_info": "gather_feeding_plan_info",
         "gather_recommendation_info": "gather_recommendation_info",
     })
 
     builder.add_conditional_edges("classify_intent", _route_by_intent, {
         "product_question": "product_question",
-        "gather_transition_info": "gather_transition_info",
+        "gather_feeding_plan_info": "gather_feeding_plan_info",
         "gather_recommendation_info": "gather_recommendation_info",
         "order_status": "order_status",
         "escalate": "escalate",
         "smalltalk": "smalltalk",
     })
 
-    for node_name in ("product_question", "gather_transition_info", "gather_recommendation_info", "order_status", "escalate", "smalltalk"):
+    for node_name in ("product_question", "gather_feeding_plan_info", "gather_recommendation_info", "order_status", "escalate", "smalltalk"):
         builder.add_edge(node_name, END)
 
     return builder.compile(checkpointer=checkpointer)
@@ -122,7 +125,8 @@ def initial_state() -> dict:
     return {
         "messages": [],
         "intent": None,
-        "transition_data": {},
+        "language": None,
+        "feeding_plan_data": {},
         "recommendation_data": {},
         "kb_citations": [],
         "escalation_reason": None,

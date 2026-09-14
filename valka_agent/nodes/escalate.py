@@ -16,15 +16,17 @@ resume value instead of pausing again) — kept idempotent/cheap here.
 from langchain_core.messages import AIMessage
 from langgraph.types import interrupt
 
-from valka_agent.nodes._helpers import last_human_text
+from valka_agent.nodes._helpers import last_human_text, resolve_language
 
 
 def escalate(state: dict) -> dict:
     text = last_human_text(state["messages"])
     reason = f"Escalation triggered by: {text[:200]}"
+    language = resolve_language(state, text)
 
     human_reply = interrupt({
         "reason": reason,
+        "language": language,
         "conversation_tail": [
             getattr(m, "content", "") for m in state["messages"][-4:]
         ],

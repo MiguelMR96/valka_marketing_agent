@@ -9,3 +9,6 @@ __pycache__/
 node_modules/
 frontend/dist/
 .pytest_cache/
+
+# Internal strategy docs -- not for the repo.
+Brief_Estrategico_Valka_IA-1.docx.pdf
