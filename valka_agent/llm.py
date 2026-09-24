@@ -251,7 +251,14 @@ def _chat_groq(system_prompt: str, user_prompt: str) -> str:
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.2,
-        max_tokens=300,
+        # Was 300 -- fine for the old 3-doc placeholder catalog, but a real
+        # "what products do you have" answer over the current 7-product
+        # catalog needs more room and was getting cut off mid-word (found
+        # live 2026-09-23: a browse-all reply stopped mid-sentence, missing
+        # the last product entirely). Gemini has no explicit cap and never
+        # hit this. 800 gives real headroom for a full-catalog answer while
+        # still bounding runaway generation.
+        max_tokens=800,
     )
     return completion.choices[0].message.content
 
